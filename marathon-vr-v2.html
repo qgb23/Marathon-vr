@@ -215,8 +215,11 @@ window.launchXR = function(){
   if(selectedRunner === 'destroyer'){
     document.getElementById('ability-hud').classList.remove('hidden');
   }
-  // Trigger the VRButton click
-  document.getElementById('VRButton').click();
+  // Just show the VRButton — user taps it once to enter VR
+  // This avoids multiple sessions being created
+  const btn = document.getElementById('VRButton');
+  btn.style.display = 'block';
+  btn.style.zIndex = '999';
 };
 
 // ── RENDERER ─────────────────────────────────
@@ -230,9 +233,9 @@ renderer.setClearColor(0x000d06,1);
 
 const vrBtn = VRButton.createButton(renderer);
 vrBtn.id = 'VRButton';
-// Keep hidden until runner is selected
-vrBtn.style.display = 'none';
+vrBtn.style.display = 'none'; // shown only after runner selection
 document.body.appendChild(vrBtn);
+
 
 renderer.xr.addEventListener('sessionstart',()=>{
   vrBtn.style.display = 'none';
@@ -527,6 +530,8 @@ function setupDestroyerControls(){
 // ── CLOCK & ANIMATION ────────────────────────
 const clock=new THREE.Clock();
 
+// Start rendering immediately for desktop preview
+// (XR takes over this loop automatically when session starts)
 renderer.setAnimationLoop(()=>{
   const t=clock.getElapsedTime();
 
