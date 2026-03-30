@@ -77,11 +77,10 @@ canvas{
 /* =========================================================
    CONFIG
 ========================================================= */
-const ABILITY_DURATION = 8.0;
+const ABILITY_DURATION = 20.0;
 const TOUCH_DIST = 0.06;
 const COOLDOWN_TOUCH = 1.5;
 
-/* overlay plane in front of user */
 const HUD_DISTANCE = -1.18;
 const HUD_WIDTH    = 2.45;
 const HUD_HEIGHT   = 1.35;
@@ -91,13 +90,19 @@ const HUD_Y_OFFSET = 0.04;
    STATE
 ========================================================= */
 const S = {
-  heading: 90,
+  heading: 0,
+  rawViewerHeading: 0,
   hudVisible: false,
   remain: 0,
   touchCool: 0,
   wasTouching: false,
   intro: 0,
-  pulse: 0
+  pulse: 0,
+
+  // compass source
+  hasTrueNorth: false,
+  trueNorthHeading: 0,
+  baselineYaw: null
 };
 
 /* =========================================================
@@ -108,6 +113,8 @@ const canvas = document.getElementById('c');
 
 async function startAR(){
   hideErr();
+
+  await initCompassSensor();
 
   if(!navigator.xr){
     showErr('WebXR non disponibile. Apri il file nel Meta Browser su Quest 3.');
@@ -172,6 +179,46 @@ function showErr(m){
 function hideErr(){
   const e=document.getElementById('err');
   e.style.display='none';
+}
+
+/* =========================================================
+   TRUE NORTH / DEVICE ORIENTATION
+========================================================= */
+async function initCompassSensor(){
+  if(typeof DeviceOrientationEvent === 'undefined') return;
+
+  try{
+    if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+      try{
+        const perm = await DeviceOrientationEvent.requestPermission();
+        if(perm !== 'granted') return;
+      }catch(e){
+        return;
+      }
+    }
+
+    window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+    window.addEventListener('deviceorientation', onDeviceOrientation, true);
+  }catch(e){}
+}
+
+function onDeviceOrientation(ev){
+  let heading = null;
+
+  if(typeof ev.webkitCompassHeading === 'number'){
+    heading = ev.webkitCompassHeading;
+  }else if(ev.absolute === true && typeof ev.alpha === 'number'){
+    heading = (360 - ev.alpha) % 360;
+  }
+
+  if(heading !== null && !Number.isNaN(heading)){
+    S.hasTrueNorth = true;
+    S.trueNorthHeading = normDeg(heading);
+  }
+}
+
+function normDeg(v){
+  return ((v % 360) + 360) % 360;
 }
 
 /* =========================================================
@@ -320,7 +367,18 @@ function xrFrame(t, frame){
       2*(q.y*q.w + q.x*q.z),
       1 - 2*(q.y*q.y + q.z*q.z)
     );
-    S.heading = ((-yaw*180/Math.PI)%360 + 360)%360;
+
+    const yawDeg = normDeg(-yaw * 180 / Math.PI);
+    S.rawViewerHeading = yawDeg;
+
+    if(S.baselineYaw === null) S.baselineYaw = yawDeg;
+
+    if(S.hasTrueNorth){
+      S.heading = S.trueNorthHeading;
+    }else{
+      // fallback: heading relativo alla sessione, stabile e non casuale tra frame
+      S.heading = normDeg(yawDeg - S.baselineYaw);
+    }
   }
 
   if(session.inputSources){
@@ -392,6 +450,10 @@ function drawEye(proj){
 ========================================================= */
 function drawHUD(){
   hx.clearRect(0,0,HW,HH);
+
+  // bussola sempre visibile
+  drawTopCompass(1.0);
+
   if(!S.hudVisible) return;
 
   const life   = S.remain / ABILITY_DURATION;
@@ -400,7 +462,6 @@ function drawHUD(){
   const a      = Math.min(1, life*1.35) * appear * flick;
 
   drawHelmetProjectorGlow(a);
-  drawTopCompass(a);
   drawTopAbilityBar(a, life);
   drawOuterGhostFrame(a);
   drawSideAssemblies(a);
@@ -416,10 +477,8 @@ function easeOutCubic(x){
    PROIETTORI / HELMET GLOW
 ========================================================= */
 function drawHelmetProjectorGlow(a){
-  // emettitori laterali, fuori dal campo utile
   let g;
 
-  // sinistra
   g = hx.createRadialGradient(-140, HH*0.52, 0, -140, HH*0.52, 520);
   g.addColorStop(0.00, `rgba(255,65,190,${0.22*a})`);
   g.addColorStop(0.18, `rgba(255,65,190,${0.16*a})`);
@@ -429,7 +488,6 @@ function drawHelmetProjectorGlow(a){
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
-  // destra
   g = hx.createRadialGradient(HW+140, HH*0.52, 0, HW+140, HH*0.52, 520);
   g.addColorStop(0.00, `rgba(255,65,190,${0.22*a})`);
   g.addColorStop(0.18, `rgba(255,65,190,${0.16*a})`);
@@ -439,7 +497,6 @@ function drawHelmetProjectorGlow(a){
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
-  // alone basso sinistra
   g = hx.createRadialGradient(120, HH+40, 0, 120, HH+40, 240);
   g.addColorStop(0.00, `rgba(255,70,190,${0.38*a})`);
   g.addColorStop(0.18, `rgba(255,70,190,${0.20*a})`);
@@ -448,7 +505,6 @@ function drawHelmetProjectorGlow(a){
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
-  // alone basso destra
   g = hx.createRadialGradient(HW-120, HH+40, 0, HW-120, HH+40, 240);
   g.addColorStop(0.00, `rgba(255,70,190,${0.38*a})`);
   g.addColorStop(0.18, `rgba(255,70,190,${0.20*a})`);
@@ -457,7 +513,6 @@ function drawHelmetProjectorGlow(a){
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
-  // vena ottica verticale laterale
   let lg = hx.createLinearGradient(0,0,HW,0);
   lg.addColorStop(0.00, `rgba(255,70,190,${0.10*a})`);
   lg.addColorStop(0.07, `rgba(255,70,190,${0.04*a})`);
@@ -476,7 +531,7 @@ function drawTopCompass(a){
   const cx = HW*0.5;
   const y  = 52;
   const d  = Math.round(S.heading);
-  const txt = `E ${String(d).padStart(3,'0')}`;
+  const txt = `${headingLabel(d)} ${String(d).padStart(3,'0')}`;
 
   hx.textAlign='center';
   hx.textBaseline='middle';
@@ -494,10 +549,11 @@ function drawTopCompass(a){
   hx.fillStyle = `rgba(245,245,255,${0.98*a})`;
   hx.font = `700 28px Arial`;
   hx.fillText(txt, cx, y-1);
+}
 
-  hx.fillStyle = `rgba(185,255,80,${0.95*a})`;
-  hx.font = `700 22px Arial`;
-  hx.fillText('AUTOMEZZO', cx, y+38);
+function headingLabel(deg){
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5)%16];
 }
 
 /* =========================================================
@@ -505,7 +561,7 @@ function drawTopCompass(a){
 ========================================================= */
 function drawTopAbilityBar(a, life){
   const cx = HW*0.5;
-  const y  = 126;
+  const y  = 152; // più in basso
   const pink     = `rgba(255,100,230,${a})`;
   const pinkSoft = `rgba(255,100,230,${0.5*a})`;
   const yellow   = `rgba(255,224,120,${a})`;
@@ -531,79 +587,85 @@ function drawTopAbilityBar(a, life){
   hx.textBaseline='middle';
   hx.fillText('01', cx, y+13);
 
+  // 3 barre che si svuotano in base al tempo
   const slotW=46, slotH=22, slotGap=6;
   const total = slotW*3 + slotGap*2;
   const sx = cx-total/2;
   const sy = y+38;
-  const filled = Math.ceil(life*3);
 
-  for(let i=0;i<3;i++){
+  const totalSegments = 3;
+  const exactFill = life * totalSegments;
+
+  for(let i=0;i<totalSegments;i++){
     const x = sx + i*(slotW+slotGap);
-    if(i<filled){
+
+    hx.fillStyle = `rgba(255,224,120,${0.13*a})`;
+    hx.fillRect(x,sy,slotW,slotH);
+    hx.strokeStyle = `rgba(255,224,120,${0.24*a})`;
+    hx.lineWidth=1;
+    hx.strokeRect(x,sy,slotW,slotH);
+
+    const fillAmount = Math.max(0, Math.min(1, exactFill - i));
+    if(fillAmount > 0){
       hx.fillStyle = yellow;
-      hx.fillRect(x,sy,slotW,slotH);
-    }else{
-      hx.fillStyle = `rgba(255,224,120,${0.13*a})`;
-      hx.fillRect(x,sy,slotW,slotH);
-      hx.strokeStyle = `rgba(255,224,120,${0.24*a})`;
-      hx.lineWidth=1;
-      hx.strokeRect(x,sy,slotW,slotH);
+      hx.fillRect(x, sy, slotW * fillAmount, slotH);
     }
   }
 
-  drawTopCircle(cx-162,y+13,a);
-  drawTopCircle(cx-102,y+13,a);
-  drawTopCircle(cx+102,y+13,a);
-  drawTopCircle(cx+162,y+13,a);
+  // cerchi più piccoli e più in basso
+  drawTopCircle(cx-152,y+18,a);
+  drawTopCircle(cx-98, y+18,a);
+  drawTopCircle(cx+98, y+18,a);
+  drawTopCircle(cx+152,y+18,a);
 
   hx.strokeStyle = pinkSoft;
   hx.lineWidth = 2.1;
 
   hx.beginPath();
-  hx.moveTo(365, y+3);
-  hx.lineTo(445, y+3);
-  hx.lineTo(468, y-13);
-  hx.lineTo(610, y-13);
+  hx.moveTo(365, y+10);
+  hx.lineTo(445, y+10);
+  hx.lineTo(468, y-6);
+  hx.lineTo(610, y-6);
   hx.stroke();
 
   hx.beginPath();
-  hx.moveTo(HW-365, y+3);
-  hx.lineTo(HW-445, y+3);
-  hx.lineTo(HW-468, y-13);
-  hx.lineTo(HW-610, y-13);
+  hx.moveTo(HW-365, y+10);
+  hx.lineTo(HW-445, y+10);
+  hx.lineTo(HW-468, y-6);
+  hx.lineTo(HW-610, y-6);
   hx.stroke();
 }
 
 function drawTopCircle(x,y,a){
+  const r = 19;
   hx.strokeStyle = `rgba(255,100,230,${a})`;
   hx.lineWidth = 2;
   hx.beginPath();
-  hx.arc(x,y,24,0,Math.PI*2);
+  hx.arc(x,y,r,0,Math.PI*2);
   hx.stroke();
 
   hx.fillStyle = `rgba(255,100,230,${0.13*a})`;
   hx.beginPath();
-  hx.arc(x,y,23,0,Math.PI*2);
+  hx.arc(x,y,r-1,0,Math.PI*2);
   hx.fill();
 
   hx.beginPath();
-  hx.arc(x,y,15,0,Math.PI*2);
+  hx.arc(x,y,11.5,0,Math.PI*2);
   hx.strokeStyle = `rgba(255,100,230,${0.34*a})`;
   hx.lineWidth = 1.2;
   hx.stroke();
 
-  // icona tipo freccia/azione
   hx.strokeStyle = `rgba(255,100,230,${0.95*a})`;
   hx.lineWidth = 2;
   hx.beginPath();
-  hx.moveTo(x-7,y);
-  hx.lineTo(x+7,y);
+  hx.moveTo(x-6,y);
+  hx.lineTo(x+6,y);
   hx.stroke();
 
   hx.beginPath();
-  hx.moveTo(x-2,y-5);
-  hx.lineTo(x+7,y);
-  hx.lineTo(x-2,y+5);
+  hx.moveTo(x-1,y-4);
+  hx.lineTo(x+6,y);
+  hx.lineTo(x-1,y+4);
   hx.stroke();
 }
 
@@ -614,27 +676,21 @@ function drawOuterGhostFrame(a){
   const pink = `rgba(255,100,230,${0.85*a})`;
   const soft = `rgba(255,100,230,${0.48*a})`;
 
-  // verticale sinistra
   hx.strokeStyle = pink;
   hx.lineWidth = 2;
   hx.beginPath(); hx.moveTo(118,170); hx.lineTo(118,690); hx.stroke();
-
-  // verticale destra
   hx.beginPath(); hx.moveTo(HW-118,170); hx.lineTo(HW-118,690); hx.stroke();
 
-  // angoli minimali
   hx.beginPath(); hx.moveTo(118,170); hx.lineTo(145,170); hx.stroke();
   hx.beginPath(); hx.moveTo(118,690); hx.lineTo(145,690); hx.stroke();
   hx.beginPath(); hx.moveTo(HW-118,170); hx.lineTo(HW-145,170); hx.stroke();
   hx.beginPath(); hx.moveTo(HW-118,690); hx.lineTo(HW-145,690); hx.stroke();
 
-  // sparkle
   drawCrossMark(150,170,a,9);
   drawCrossMark(HW-150,170,a,9);
   drawCrossMark(150,690,a,9);
   drawCrossMark(HW-150,690,a,9);
 
-  // markers quadrati
   hx.fillStyle = soft;
   hx.fillRect(165,318,12,12);
   hx.fillRect(165,538,12,12);
@@ -655,11 +711,9 @@ function drawAssemblyLeft(cx,cy,a){
   const p2 = `rgba(255,125,235,${0.82*a})`;
   const p3 = `rgba(255,190,248,${0.20*a})`;
 
-  // pilastro verticale
   hx.fillStyle = p1;
   hx.fillRect(cx-15, cy-128, 30, 256);
 
-  // blocco centrale
   hx.fillStyle = p2;
   hx.fillRect(cx-42, cy-42, 84, 84);
 
@@ -669,29 +723,24 @@ function drawAssemblyLeft(cx,cy,a){
   hx.fillStyle = p3;
   hx.fillRect(cx-8, cy-8, 16, 16);
 
-  // bracci orizzontali verso centro
   hx.fillStyle = p1;
   hx.fillRect(cx+42, cy-34, 96, 18);
   hx.fillRect(cx+42, cy+16, 96, 18);
 
-  // terminali quadrati
   hx.fillStyle = p2;
   hx.fillRect(cx+138, cy-40, 24, 24);
   hx.fillRect(cx+138, cy+10, 24, 24);
 
-  // pixel esterni sopra/sotto
   hx.fillRect(cx-22, cy-150, 14, 14);
   hx.fillRect(cx+8,  cy-150, 14, 14);
   hx.fillRect(cx-22, cy+136, 14, 14);
   hx.fillRect(cx+8,  cy+136, 14, 14);
 
-  // frammenti pixel
   hx.fillRect(cx-42, cy-66, 10, 10);
   hx.fillRect(cx-62, cy-24, 10, 10);
   hx.fillRect(cx-62, cy+16, 10, 10);
   hx.fillRect(cx-42, cy+56, 10, 10);
 
-  // linee di aggancio
   hx.strokeStyle = `rgba(255,100,230,${0.75*a})`;
   hx.lineWidth = 1.8;
   hx.beginPath(); hx.moveTo(cx+162, cy-31); hx.lineTo(cx+248, cy-31); hx.stroke();
@@ -783,7 +832,6 @@ function drawDigitalNoise(a){
 
   hx.strokeStyle = `rgba(255,100,230,${0.22*a})`;
   hx.lineWidth = 1;
-
   hx.beginPath(); hx.moveTo(560,450); hx.lineTo(610,450); hx.stroke();
   hx.beginPath(); hx.moveTo(990,450); hx.lineTo(1040,450); hx.stroke();
 }
