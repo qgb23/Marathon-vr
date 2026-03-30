@@ -143,7 +143,7 @@
     <div>BUILD</div><div><span>v4.1.7-rc</span></div>
   </div>
   <div class="hud-line"></div>
-  <button id="enter-btn" onclick="enterXR()">[ ENTER TAU CETI IV ]</button>
+  <button id="enter-btn">[ ENTER TAU CETI IV ]</button>
   <div id="error-msg"></div>
 </div>
 
@@ -152,7 +152,7 @@
 <canvas id="c"></canvas>
 
 <script type="module">
-import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+import * as THREE from 'https://cdn.skypack.dev/three@0.128.0';
 
 let renderer, scene, camera, clock;
 let handLeft, handRight;
@@ -617,7 +617,7 @@ function render(timestamp, frame) {
 }
 
 // ── ENTER XR ────────────────────────────────────────────────────
-window.enterXR = async function() {
+window.enterXR = async function enterXR() {
   if (!renderer) init();
 
   const errEl = document.getElementById('error-msg');
@@ -685,6 +685,9 @@ async function tryVR() {
 
 // Init scene for desktop preview
 init();
+
+// Attach button inside module (fixes onclick scope in ES modules)
+document.getElementById("enter-btn").addEventListener("click", enterXR);
 </script>
 </body>
 </html>
