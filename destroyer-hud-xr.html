@@ -1,650 +1,783 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Destroyer HUD</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quest 3 Ability HUD</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body {
-  background:#000; color:#fff;
-  font-family:'Courier New',monospace;
-  display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  height:100vh; gap:14px;
+html, body {
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#000;
+  font-family:Arial, sans-serif;
 }
-#btn {
-  padding:16px 40px; font-size:16px;
-  font-family:'Courier New',monospace;
-  font-weight:700; letter-spacing:.2em; text-transform:uppercase;
-  background:transparent; color:#ff2d9b;
-  border:2px solid #ff2d9b; border-radius:3px; cursor:pointer;
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
-#sub {
-  font-size:11px; color:rgba(255,255,255,.3);
-  letter-spacing:.1em; text-align:center;
-  max-width:340px; line-height:1.8;
+#ui {
+  position:fixed;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  z-index:5;
 }
-#err { color:#f66; font-size:12px; display:none; text-align:center; max-width:340px; }
-canvas { display:none; position:fixed; inset:0; width:100%; height:100%; }
+#btn{
+  padding:16px 38px;
+  border:2px solid #ff2d9b;
+  background:transparent;
+  color:#ff2d9b;
+  font-weight:700;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+#sub{
+  color:rgba(255,255,255,.55);
+  text-align:center;
+  line-height:1.6;
+  font-size:13px;
+}
+#err{
+  color:#ff6b6b;
+  font-size:13px;
+  display:none;
+  text-align:center;
+  max-width:360px;
+}
+canvas{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  display:none;
+}
 </style>
 </head>
 <body>
-<button id="btn" onclick="startAR()">Enter AR</button>
-<div id="sub">
-  Quest 3 · immersive-ar · hand tracking<br>
-  <span style="color:rgba(255,45,155,.6)">Tocca il palmo destro con l'indice sinistro</span>
+
+<div id="ui">
+  <button id="btn" onclick="startAR()">Enter AR</button>
+  <div id="sub">
+    Quest 3 · immersive-ar · hand tracking<br>
+    Tocca il palmo destro con l'indice sinistro
+  </div>
+  <div id="err"></div>
 </div>
-<div id="err"></div>
+
 <canvas id="c"></canvas>
 
 <script>
-// ─────────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────────
-var ABILITY_DURATION = 8;
-var TOUCH_DIST       = 0.06;
-var COOLDOWN_TOUCH   = 1.5;
-var SEGS             = 10;
+/* =========================================================
+   CONFIG
+========================================================= */
+const ABILITY_DURATION = 8.0;
+const TOUCH_DIST = 0.06;
+const COOLDOWN_TOUCH = 1.5;
 
-// ─────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────
-var S = {
-  heading:      90,
-  timerSec:     18*60+36,
-  hp:           80,
-  hudVisible:   false,
-  remain:       0,
-  touchCool:    0,
-  wasTouching:  false,
+/* =========================================================
+   STATE
+========================================================= */
+const S = {
+  heading: 90,
+  hudVisible: false,
+  remain: 0,
+  touchCool: 0,
+  wasTouching: false,
+  introFade: 0
 };
 
-// ─────────────────────────────────────────────
-// WebXR
-// ─────────────────────────────────────────────
-var session, gl, refSpace, handL, handR;
-var canvas = document.getElementById('c');
+/* =========================================================
+   XR
+========================================================= */
+let session, gl, refSpace, handL, handR;
+const canvas = document.getElementById('c');
 
-async function startAR(){
-  document.getElementById('err').style.display='none';
-  if(!navigator.xr) return showErr('WebXR non disponibile. Usa Meta Browser su Quest 3.');
-  var ok = await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
-  if(!ok) return showErr('immersive-ar non supportato.');
-  try {
-    session = await navigator.xr.requestSession('immersive-ar',{
-      requiredFeatures:['local','hand-tracking'],
-    });
-  } catch(e){
-    try {
-      session = await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local']});
-    } catch(e2){ return showErr('Errore: '+e2.message); }
+async function startAR() {
+  hideErr();
+
+  if (!navigator.xr) {
+    showErr('WebXR non disponibile. Apri il file dal Meta Browser su Quest 3.');
+    return;
   }
-  document.getElementById('btn').style.display='none';
-  document.getElementById('sub').style.display='none';
-  canvas.style.display='block';
 
-  gl = canvas.getContext('webgl2',{xrCompatible:true,alpha:true,premultipliedAlpha:false})
-    || canvas.getContext('webgl', {xrCompatible:true,alpha:true,premultipliedAlpha:false});
-  await session.updateRenderState({ baseLayer: new XRWebGLLayer(session,gl,{alpha:true}) });
+  const ok = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+  if (!ok) {
+    showErr('immersive-ar non supportato.');
+    return;
+  }
+
+  try {
+    session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['local', 'hand-tracking']
+    });
+  } catch (e) {
+    try {
+      session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['local']
+      });
+    } catch (e2) {
+      showErr('Errore sessione XR: ' + e2.message);
+      return;
+    }
+  }
+
+  document.getElementById('ui').style.display = 'none';
+  canvas.style.display = 'block';
+
+  gl = canvas.getContext('webgl2', {
+    xrCompatible: true,
+    alpha: true,
+    premultipliedAlpha: false
+  }) || canvas.getContext('webgl', {
+    xrCompatible: true,
+    alpha: true,
+    premultipliedAlpha: false
+  });
+
+  await session.updateRenderState({
+    baseLayer: new XRWebGLLayer(session, gl, { alpha: true })
+  });
+
   refSpace = await session.requestReferenceSpace('local');
 
-  document.addEventListener('keydown',function(e){
-    if(e.code==='Space') triggerAbility();
-  });
-  setInterval(function(){ S.timerSec=Math.max(0,S.timerSec-1); },1000);
   initGL();
   session.requestAnimationFrame(xrFrame);
-}
-function showErr(m){ var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
 
-function triggerAbility(){
-  if(S.hudVisible) return;
-  S.hudVisible=true;
-  S.remain=ABILITY_DURATION;
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') triggerAbility();
+  });
 }
 
-// ─────────────────────────────────────────────
-// GESTURE
-// ─────────────────────────────────────────────
-function jp(hand,name,frame){
-  if(!hand) return null;
-  var j=hand.get(name); if(!j) return null;
-  var p=frame.getJointPose(j,refSpace); if(!p) return null;
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideErr() {
+  const el = document.getElementById('err');
+  el.style.display = 'none';
+}
+
+/* =========================================================
+   GESTURE
+========================================================= */
+function jp(hand, name, frame) {
+  if (!hand) return null;
+  const j = hand.get(name);
+  if (!j) return null;
+  const p = frame.getJointPose(j, refSpace);
+  if (!p) return null;
   return p.transform.position;
 }
-function d3(a,b){
-  var dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
-  return Math.sqrt(dx*dx+dy*dy+dz*dz);
-}
-function checkTouch(frame){
-  if(S.touchCool>0) return;
-  var iTip=jp(handL,'index-finger-tip',frame);
-  var wR  =jp(handR,'wrist',frame);
-  var mR  =jp(handR,'middle-finger-phalanx-proximal',frame);
-  if(!iTip||!wR||!mR) return;
-  var palm={x:(wR.x+mR.x)/2,y:(wR.y+mR.y)/2,z:(wR.z+mR.z)/2};
-  var dist=d3(iTip,palm);
-  if(dist<TOUCH_DIST && !S.wasTouching){ S.wasTouching=true; triggerAbility(); }
-  if(dist>TOUCH_DIST*1.8) S.wasTouching=false;
+
+function d3(a,b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx*dx + dy*dy + dz*dz);
 }
 
-// ─────────────────────────────────────────────
-// WebGL
-// ─────────────────────────────────────────────
-var VERT=`precision highp float;
-attribute vec3 aPos; attribute vec2 aUV;
-uniform mat4 uProj; varying vec2 vUV;
-void main(){ gl_Position=uProj*vec4(aPos,1.0); vUV=aUV; }`;
-var FRAG=`precision mediump float;
-varying vec2 vUV; uniform sampler2D uTex;
-void main(){ vec4 c=texture2D(uTex,vUV); gl_FragColor=vec4(c.rgb*c.a,c.a); }`;
+function checkTouch(frame) {
+  if (S.touchCool > 0) return;
 
-var prog,vbo,tex,aPos,aUV,uProj,uTex_;
-var QW=1.8, QH=0.9, QZ=-1.5, QY=0.08;
+  const iTip = jp(handL, 'index-finger-tip', frame);
+  const wR   = jp(handR, 'wrist', frame);
+  const mR   = jp(handR, 'middle-finger-phalanx-proximal', frame);
 
-function initGL(){
-  var vs=mkSh(gl.VERTEX_SHADER,VERT), fs=mkSh(gl.FRAGMENT_SHADER,FRAG);
-  prog=gl.createProgram();
-  gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
-  var hw=QW/2,hh=QH/2,yb=-hh+QY,yt=hh+QY;
-  vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
-    -hw,yb,QZ,0,1, hw,yb,QZ,1,1, -hw,yt,QZ,0,0, hw,yt,QZ,1,0
-  ]),gl.STATIC_DRAW);
-  aPos=gl.getAttribLocation(prog,'aPos'); aUV=gl.getAttribLocation(prog,'aUV');
-  uProj=gl.getUniformLocation(prog,'uProj'); uTex_=gl.getUniformLocation(prog,'uTex');
-  tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-}
-function mkSh(t,s){ var x=gl.createShader(t); gl.shaderSource(x,s); gl.compileShader(x); return x; }
+  if (!iTip || !wR || !mR) return;
 
-// ─────────────────────────────────────────────
-// HUD Canvas  1024 × 512
-// ─────────────────────────────────────────────
-var HW=1024, HH=512;
-var hc=document.createElement('canvas'); hc.width=HW; hc.height=HH;
-var hx=hc.getContext('2d');
+  const palm = {
+    x:(wR.x + mR.x) * 0.5,
+    y:(wR.y + mR.y) * 0.5,
+    z:(wR.z + mR.z) * 0.5
+  };
 
-// ─────────────────────────────────────────────
-// XR LOOP
-// ─────────────────────────────────────────────
-var lastT=0;
-function xrFrame(t,frame){
-  session.requestAnimationFrame(xrFrame);
-  var dt=lastT?(t-lastT)/1000:0.016; lastT=t;
+  const dist = d3(iTip, palm);
 
-  var pose=frame.getViewerPose(refSpace);
-  if(pose){
-    var q=pose.transform.orientation;
-    var yaw=Math.atan2(2*(q.y*q.w+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
-    S.heading=((-yaw*180/Math.PI)%360+360)%360;
+  if (dist < TOUCH_DIST && !S.wasTouching) {
+    S.wasTouching = true;
+    triggerAbility();
   }
-  if(session.inputSources){
-    for(var src of session.inputSources){
-      if(src.hand){
-        if(src.handedness==='left')  handL=src.hand;
-        if(src.handedness==='right') handR=src.hand;
+  if (dist > TOUCH_DIST * 1.8) {
+    S.wasTouching = false;
+  }
+}
+
+function triggerAbility() {
+  if (S.hudVisible) return;
+  S.hudVisible = true;
+  S.remain = ABILITY_DURATION;
+  S.introFade = 0;
+}
+
+/* =========================================================
+   GL PROGRAM
+========================================================= */
+const VERT = `
+precision highp float;
+attribute vec3 aPos;
+attribute vec2 aUV;
+uniform mat4 uProj;
+varying vec2 vUV;
+void main(){
+  gl_Position = uProj * vec4(aPos, 1.0);
+  vUV = aUV;
+}
+`;
+
+const FRAG = `
+precision mediump float;
+varying vec2 vUV;
+uniform sampler2D uTex;
+void main(){
+  vec4 c = texture2D(uTex, vUV);
+  gl_FragColor = vec4(c.rgb * c.a, c.a);
+}
+`;
+
+let prog, vbo, tex, aPos, aUV, uProj, uTex_;
+const QW = 1.8, QH = 0.9, QZ = -1.5, QY = 0.08;
+
+function initGL() {
+  const vs = mkSh(gl.VERTEX_SHADER, VERT);
+  const fs = mkSh(gl.FRAGMENT_SHADER, FRAG);
+
+  prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+
+  const hw = QW / 2;
+  const hh = QH / 2;
+  const yb = -hh + QY;
+  const yt =  hh + QY;
+
+  vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -hw, yb, QZ, 0, 1,
+     hw, yb, QZ, 1, 1,
+    -hw, yt, QZ, 0, 0,
+     hw, yt, QZ, 1, 0
+  ]), gl.STATIC_DRAW);
+
+  aPos  = gl.getAttribLocation(prog, 'aPos');
+  aUV   = gl.getAttribLocation(prog, 'aUV');
+  uProj = gl.getUniformLocation(prog, 'uProj');
+  uTex_ = gl.getUniformLocation(prog, 'uTex');
+
+  tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+function mkSh(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  return sh;
+}
+
+/* =========================================================
+   HUD CANVAS
+========================================================= */
+const HW = 1024;
+const HH = 512;
+const hc = document.createElement('canvas');
+hc.width = HW;
+hc.height = HH;
+const hx = hc.getContext('2d');
+
+/* =========================================================
+   XR LOOP
+========================================================= */
+let lastT = 0;
+
+function xrFrame(t, frame) {
+  session.requestAnimationFrame(xrFrame);
+
+  const dt = lastT ? (t - lastT) / 1000 : 0.016;
+  lastT = t;
+
+  const pose = frame.getViewerPose(refSpace);
+
+  if (pose) {
+    const q = pose.transform.orientation;
+    const yaw = Math.atan2(
+      2 * (q.y * q.w + q.x * q.z),
+      1 - 2 * (q.y * q.y + q.z * q.z)
+    );
+    S.heading = ((-yaw * 180 / Math.PI) % 360 + 360) % 360;
+  }
+
+  if (session.inputSources) {
+    for (const src of session.inputSources) {
+      if (src.hand) {
+        if (src.handedness === 'left') handL = src.hand;
+        if (src.handedness === 'right') handR = src.hand;
       }
     }
   }
-  if(S.touchCool>0) S.touchCool=Math.max(0,S.touchCool-dt);
+
+  if (S.touchCool > 0) {
+    S.touchCool = Math.max(0, S.touchCool - dt);
+  }
+
   checkTouch(frame);
-  if(S.hudVisible){
-    S.remain=Math.max(0,S.remain-dt);
-    if(S.remain<=0){
-      S.hudVisible=false;
-      S.touchCool=COOLDOWN_TOUCH;
-      S.wasTouching=false;
+
+  if (S.hudVisible) {
+    S.remain = Math.max(0, S.remain - dt);
+    S.introFade = Math.min(1, S.introFade + dt * 4.5);
+
+    if (S.remain <= 0) {
+      S.hudVisible = false;
+      S.touchCool = COOLDOWN_TOUCH;
+      S.wasTouching = false;
     }
   }
-  if(!pose) return;
 
-  var layer=session.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER,layer.framebuffer);
-  gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  if (!pose) return;
+
+  const layer = session.renderState.baseLayer;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   drawHUD();
 
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hc);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hc);
 
-  for(var view of pose.views){
-    var vp=layer.getViewport(view);
-    gl.viewport(vp.x,vp.y,vp.width,vp.height);
+  for (const view of pose.views) {
+    const vp = layer.getViewport(view);
+    gl.viewport(vp.x, vp.y, vp.width, vp.height);
     drawEye(view.projectionMatrix);
   }
 }
-function drawEye(proj){
+
+function drawEye(proj) {
   gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,20,0);
-  gl.enableVertexAttribArray(aUV);  gl.vertexAttribPointer(aUV, 2,gl.FLOAT,false,20,12);
-  gl.uniformMatrix4fv(uProj,false,proj);
-  gl.uniform1i(uTex_,0);
-  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 20, 0);
+
+  gl.enableVertexAttribArray(aUV);
+  gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 20, 12);
+
+  gl.uniformMatrix4fv(uProj, false, proj);
+  gl.uniform1i(uTex_, 0);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.disable(gl.DEPTH_TEST);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-// ─────────────────────────────────────────────
-// DRAW HUD
-// ─────────────────────────────────────────────
-function drawHUD(){
-  hx.clearRect(0,0,HW,HH);
-  drawCompass();
-  drawTimer();
-  drawHP();
-  if(S.hudVisible){
-    var p=S.remain/ABILITY_DURATION; // 1→0
-    drawGradient(p);   // gradiente per primo (sotto tutto)
-    drawFrame(p);      // cornice laterale
-    drawBigCrosses(p); // croci pixelate
-    drawTopBar(p);     // barra superiore con cerchi e slot
-    drawCrosshair();
+/* =========================================================
+   DRAW HUD
+========================================================= */
+function drawHUD() {
+  hx.clearRect(0, 0, HW, HH);
+
+  if (!S.hudVisible) return;
+
+  const life = S.remain / ABILITY_DURATION;
+  const appear = easeOutCubic(S.introFade);
+  const alpha = Math.min(1, life * 1.25) * appear;
+
+  drawCornerGlow(alpha);
+  drawBottomPinkHaze(alpha);
+  drawTopCompass(alpha);
+  drawTopAbilityBar(alpha, life);
+  drawMainFrame(alpha);
+  drawSideCrosses(alpha);
+  drawMicroMarks(alpha);
+}
+
+function easeOutCubic(x) {
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/* =========================================================
+   GLOW ANGOLI / BORDI
+========================================================= */
+function drawCornerGlow(a) {
+  // glow diffuso alto sinistra / alto destra
+  let g = hx.createRadialGradient(0, 0, 0, 0, 0, HW * 0.62);
+  g.addColorStop(0.00, `rgba(255,45,155,${0.18*a})`);
+  g.addColorStop(0.22, `rgba(255,45,155,${0.10*a})`);
+  g.addColorStop(0.55, `rgba(255,45,155,${0.03*a})`);
+  g.addColorStop(1.00, `rgba(255,45,155,0)`);
+  hx.fillStyle = g;
+  hx.fillRect(0,0,HW,HH);
+
+  g = hx.createRadialGradient(HW, 0, 0, HW, 0, HW * 0.62);
+  g.addColorStop(0.00, `rgba(255,45,155,${0.18*a})`);
+  g.addColorStop(0.22, `rgba(255,45,155,${0.10*a})`);
+  g.addColorStop(0.55, `rgba(255,45,155,${0.03*a})`);
+  g.addColorStop(1.00, `rgba(255,45,155,0)`);
+  hx.fillStyle = g;
+  hx.fillRect(0,0,HW,HH);
+
+  // velo laterale
+  let lg = hx.createLinearGradient(0,0,HW,0);
+  lg.addColorStop(0.00, `rgba(255,45,155,${0.12*a})`);
+  lg.addColorStop(0.10, `rgba(255,45,155,${0.03*a})`);
+  lg.addColorStop(0.50, `rgba(255,45,155,0)`);
+  lg.addColorStop(0.90, `rgba(255,45,155,${0.03*a})`);
+  lg.addColorStop(1.00, `rgba(255,45,155,${0.12*a})`);
+  hx.fillStyle = lg;
+  hx.fillRect(0,0,HW,HH);
+}
+
+function drawBottomPinkHaze(a) {
+  // alone rosa in basso a sinistra
+  let g = hx.createRadialGradient(70, HH-20, 0, 70, HH-20, 180);
+  g.addColorStop(0.00, `rgba(255,45,155,${0.42*a})`);
+  g.addColorStop(0.22, `rgba(255,45,155,${0.18*a})`);
+  g.addColorStop(0.55, `rgba(255,45,155,${0.05*a})`);
+  g.addColorStop(1.00, `rgba(255,45,155,0)`);
+  hx.fillStyle = g;
+  hx.fillRect(0,0,HW,HH);
+
+  // alone rosa in basso a destra
+  g = hx.createRadialGradient(HW-70, HH-20, 0, HW-70, HH-20, 180);
+  g.addColorStop(0.00, `rgba(255,45,155,${0.42*a})`);
+  g.addColorStop(0.22, `rgba(255,45,155,${0.18*a})`);
+  g.addColorStop(0.55, `rgba(255,45,155,${0.05*a})`);
+  g.addColorStop(1.00, `rgba(255,45,155,0)`);
+  hx.fillStyle = g;
+  hx.fillRect(0,0,HW,HH);
+}
+
+/* =========================================================
+   TOP COMPASS
+========================================================= */
+function drawTopCompass(a) {
+  const cx = HW / 2;
+  const y  = 26;
+  const deg = Math.round(S.heading);
+  const dirText = `E ${String(deg).padStart(3,'0')}`;
+
+  hx.textAlign = 'center';
+  hx.textBaseline = 'middle';
+
+  hx.fillStyle = `rgba(255,255,255,${0.95*a})`;
+  hx.font = `600 16px Arial`;
+  hx.fillText('NE', cx - 120, y + 2);
+  hx.fillText('SE', cx + 120, y + 2);
+
+  hx.strokeStyle = `rgba(255,255,255,${0.75*a})`;
+  hx.lineWidth = 1.2;
+  hx.beginPath();
+  hx.moveTo(cx - 50, y);
+  hx.lineTo(cx - 20, y);
+  hx.stroke();
+  hx.beginPath();
+  hx.moveTo(cx + 20, y);
+  hx.lineTo(cx + 50, y);
+  hx.stroke();
+
+  hx.fillStyle = `rgba(255,255,255,${0.98*a})`;
+  hx.font = `700 24px Arial`;
+  hx.fillText(dirText, cx, y + 2);
+
+  hx.fillStyle = `rgba(188,255,0,${0.9*a})`;
+  hx.font = `700 18px Arial`;
+  hx.fillText('AUTOMEZZO', cx, y + 34);
+}
+
+/* =========================================================
+   TOP ABILITY BAR
+========================================================= */
+function drawTopAbilityBar(a, life) {
+  const cx = HW / 2;
+  const y = 86;
+
+  const pink = `rgba(255,96,220,${a})`;
+  const pinkSoft = `rgba(255,96,220,${0.45*a})`;
+  const yellow = `rgba(255,224,92,${a})`;
+
+  const ticks = 11;
+  const tickW = 7;
+  const tickH = 22;
+  const gap = 5;
+
+  const leftStart  = cx - 35 - ticks * (tickW + gap);
+  const rightStart = cx + 35;
+
+  for (let i = 0; i < ticks; i++) {
+    const lx = leftStart + i * (tickW + gap);
+    const rx = rightStart + i * (tickW + gap);
+
+    hx.fillStyle = pink;
+    hx.fillRect(lx, y, tickW, tickH);
+    hx.fillRect(rx, y, tickW, tickH);
   }
-}
 
-// ─────────────────────────────────────────────
-// GRADIENTE — parte dagli angoli, copre tutta l'altezza
-// Radial gradient da ogni angolo + lineare laterale
-// ─────────────────────────────────────────────
-function drawGradient(p){
-  var a=Math.min(1,p*1.1);
+  hx.fillStyle = `rgba(255,255,255,${0.92*a})`;
+  hx.font = `700 22px Arial`;
+  hx.textAlign = 'center';
+  hx.textBaseline = 'middle';
+  hx.fillText('01', cx, y + 11);
 
-  // Angolo in alto a sinistra
-  var g1=hx.createRadialGradient(0,0,0,0,0,HW*0.55);
-  g1.addColorStop(0,   `rgba(255,20,140,${0.55*a})`);
-  g1.addColorStop(0.35,`rgba(255,20,140,${0.22*a})`);
-  g1.addColorStop(0.65,`rgba(255,20,140,${0.06*a})`);
-  g1.addColorStop(1,   'rgba(255,20,140,0)');
-  hx.fillStyle=g1; hx.fillRect(0,0,HW,HH);
+  const slotW = 42;
+  const slotH = 20;
+  const slotGap = 6;
+  const slotY = y + 32;
+  const totalW = slotW * 3 + slotGap * 2;
+  const sx = cx - totalW / 2;
 
-  // Angolo in alto a destra
-  var g2=hx.createRadialGradient(HW,0,0,HW,0,HW*0.55);
-  g2.addColorStop(0,   `rgba(255,20,140,${0.55*a})`);
-  g2.addColorStop(0.35,`rgba(255,20,140,${0.22*a})`);
-  g2.addColorStop(0.65,`rgba(255,20,140,${0.06*a})`);
-  g2.addColorStop(1,   'rgba(255,20,140,0)');
-  hx.fillStyle=g2; hx.fillRect(0,0,HW,HH);
+  const filled = Math.ceil(life * 3);
 
-  // Angolo in basso a sinistra
-  var g3=hx.createRadialGradient(0,HH,0,0,HH,HW*0.45);
-  g3.addColorStop(0,   `rgba(255,20,140,${0.40*a})`);
-  g3.addColorStop(0.4, `rgba(255,20,140,${0.14*a})`);
-  g3.addColorStop(1,   'rgba(255,20,140,0)');
-  hx.fillStyle=g3; hx.fillRect(0,0,HW,HH);
-
-  // Angolo in basso a destra
-  var g4=hx.createRadialGradient(HW,HH,0,HW,HH,HW*0.45);
-  g4.addColorStop(0,   `rgba(255,20,140,${0.40*a})`);
-  g4.addColorStop(0.4, `rgba(255,20,140,${0.14*a})`);
-  g4.addColorStop(1,   'rgba(255,20,140,0)');
-  hx.fillStyle=g4; hx.fillRect(0,0,HW,HH);
-}
-
-// ─────────────────────────────────────────────
-// FRAME LATERALE — identico allo screenshot
-// Linea verticale + angolo arrotondato + decorazioni
-// ─────────────────────────────────────────────
-function drawFrame(p){
-  var a=Math.min(1,p*1.1);
-  var col=`rgba(255,45,155,${a})`;
-  var colD=`rgba(255,45,155,${a*0.5})`;
-
-  [0,1].forEach(function(side){
-    var mx = side===0 ? 38 : HW-38;  // x della linea verticale principale
-    var dir = side===0 ? 1 : -1;     // direzione verso centro (+1 o -1)
-
-    // ── Linea verticale principale ──
-    hx.strokeStyle=col; hx.lineWidth=2;
-    // Solo la parte alta e bassa (come screenshot, interrotta dalla croce)
-    hx.beginPath(); hx.moveTo(mx,18); hx.lineTo(mx, HH*0.32); hx.stroke();
-    hx.beginPath(); hx.moveTo(mx,HH*0.62); hx.lineTo(mx, HH-18); hx.stroke();
-
-    // ── Angolo superiore arrotondato ──
-    var r=12;
-    hx.strokeStyle=col; hx.lineWidth=2;
-    hx.beginPath();
-    if(side===0){
-      hx.moveTo(mx, 18);
-      hx.lineTo(mx+r, 18);
-      // linea orizzontale superiore
-      hx.lineTo(HW*0.28, 18);
+  for (let i = 0; i < 3; i++) {
+    if (i < filled) {
+      hx.fillStyle = yellow;
+      hx.fillRect(sx + i * (slotW + slotGap), slotY, slotW, slotH);
     } else {
-      hx.moveTo(mx, 18);
-      hx.lineTo(mx-r, 18);
-      hx.lineTo(HW*0.72, 18);
+      hx.fillStyle = `rgba(255,224,92,${0.15*a})`;
+      hx.fillRect(sx + i * (slotW + slotGap), slotY, slotW, slotH);
+      hx.strokeStyle = `rgba(255,224,92,${0.25*a})`;
+      hx.lineWidth = 1;
+      hx.strokeRect(sx + i * (slotW + slotGap), slotY, slotW, slotH);
     }
-    hx.stroke();
+  }
 
-    // ── Angolo inferiore arrotondato ──
-    hx.beginPath();
-    if(side===0){
-      hx.moveTo(mx, HH-18);
-      hx.lineTo(mx+r, HH-18);
-      hx.lineTo(HW*0.25, HH-18);
-    } else {
-      hx.moveTo(mx, HH-18);
-      hx.lineTo(mx-r, HH-18);
-      hx.lineTo(HW*0.75, HH-18);
-    }
-    hx.stroke();
+  drawTopCircles(cx - 150, y + 11, a);
+  drawTopCircles(cx - 95,  y + 11, a);
+  drawTopCircles(cx + 95,  y + 11, a);
+  drawTopCircles(cx + 150, y + 11, a);
 
-    // ── Piccoli quadratini angolo (come screenshot) ──
-    hx.fillStyle=col;
-    hx.fillRect(mx-1, 16, 4, 4);    // angolo top
-    hx.fillRect(mx-1, HH-20, 4, 4); // angolo bottom
+  hx.strokeStyle = pinkSoft;
+  hx.lineWidth = 2;
 
-    // ── Stella/sparkle agli angoli esterni (4 punte) ──
-    drawSparkle(side===0 ? mx-16 : mx+16, HH*0.5, a, 10);
+  hx.beginPath();
+  hx.moveTo(235, y + 2);
+  hx.lineTo(305, y + 2);
+  hx.lineTo(325, y - 12);
+  hx.lineTo(440, y - 12);
+  hx.stroke();
 
-    // ── Decorazioni UI piccole (dashes, dots) ──
-    // Trattini brevi orizzontali (come screenshot: "=====")
-    hx.strokeStyle=colD; hx.lineWidth=1;
-    hx.setLineDash([6,3]);
-    hx.beginPath();
-    hx.moveTo(side===0 ? mx+8 : mx-60, HH*0.28);
-    hx.lineTo(side===0 ? mx+60 : mx-8, HH*0.28);
-    hx.stroke();
-    hx.beginPath();
-    hx.moveTo(side===0 ? mx+8 : mx-60, HH*0.72);
-    hx.lineTo(side===0 ? mx+60 : mx-8, HH*0.72);
-    hx.stroke();
-    hx.setLineDash([]);
-
-    // Piccoli "UI" quadratini (come screenshot, due per lato)
-    hx.fillStyle=colD;
-    hx.fillRect(side===0 ? mx+14 : mx-22, HH*0.30-3, 8, 6);
-    hx.fillRect(side===0 ? mx+14 : mx-22, HH*0.70-3, 8, 6);
-
-    // Stella sparkle piccola intermedia
-    drawSparkle(side===0 ? mx-14 : mx+14, HH*0.28, a*0.6, 6);
-    drawSparkle(side===0 ? mx-14 : mx+14, HH*0.72, a*0.6, 6);
-  });
+  hx.beginPath();
+  hx.moveTo(HW - 235, y + 2);
+  hx.lineTo(HW - 305, y + 2);
+  hx.lineTo(HW - 325, y - 12);
+  hx.lineTo(HW - 440, y - 12);
+  hx.stroke();
 }
 
-function drawSparkle(cx,cy,alpha,size){
-  hx.strokeStyle=`rgba(255,45,155,${alpha})`;
-  hx.lineWidth=1.5; hx.lineCap='round';
-  hx.beginPath(); hx.moveTo(cx,cy-size); hx.lineTo(cx,cy+size); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx-size,cy); hx.lineTo(cx+size,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx-size*0.6,cy-size*0.6); hx.lineTo(cx+size*0.6,cy+size*0.6); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+size*0.6,cy-size*0.6); hx.lineTo(cx-size*0.6,cy+size*0.6); hx.stroke();
+function drawTopCircles(x, y, a) {
+  hx.strokeStyle = `rgba(255,96,220,${a})`;
+  hx.lineWidth = 2;
+  hx.beginPath();
+  hx.arc(x, y, 22, 0, Math.PI * 2);
+  hx.stroke();
+
+  hx.fillStyle = `rgba(255,96,220,${0.16*a})`;
+  hx.beginPath();
+  hx.arc(x, y, 21, 0, Math.PI * 2);
+  hx.fill();
+
+  hx.strokeStyle = `rgba(255,96,220,${0.95*a})`;
+  hx.lineWidth = 2;
+  hx.beginPath();
+  hx.moveTo(x - 8, y);
+  hx.lineTo(x + 8, y);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(x - 3, y - 6);
+  hx.lineTo(x + 7, y);
+  hx.lineTo(x - 3, y + 6);
+  hx.stroke();
 }
 
-// ─────────────────────────────────────────────
-// CROCI PIXEL — identiche allo screenshot
-// Struttura precisa: corpo verticale + orizzontale + quadrati laterali
-// ─────────────────────────────────────────────
-function drawBigCrosses(p){
-  var a=Math.min(1,p*1.1);
-  // Posizione x delle croci: ~22% e 78% della larghezza
-  drawOneCross(HW*0.215, HH*0.455, a);
-  drawOneCross(HW*0.785, HH*0.455, a);
+/* =========================================================
+   MAIN FRAME
+========================================================= */
+function drawMainFrame(a) {
+  const pink = `rgba(255,96,220,${a})`;
+  const soft = `rgba(255,96,220,${0.55*a})`;
+
+  // lato sinistro
+  hx.strokeStyle = pink;
+  hx.lineWidth = 2;
+
+  hx.beginPath();
+  hx.moveTo(85, 110);
+  hx.lineTo(85, 380);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(85, 110);
+  hx.lineTo(105, 110);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(85, 380);
+  hx.lineTo(105, 380);
+  hx.stroke();
+
+  // lato destro
+  hx.beginPath();
+  hx.moveTo(HW-85, 110);
+  hx.lineTo(HW-85, 380);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(HW-85, 110);
+  hx.lineTo(HW-105, 110);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(HW-85, 380);
+  hx.lineTo(HW-105, 380);
+  hx.stroke();
+
+  // piccoli crossmark
+  drawSmallCross(125, 108, a);
+  drawSmallCross(HW-125, 108, a);
+  drawSmallCross(125, 380, a);
+  drawSmallCross(HW-125, 380, a);
+
+  // quadratini verticali
+  hx.fillStyle = soft;
+  hx.fillRect(120, 188, 10, 10);
+  hx.fillRect(120, 292, 10, 10);
+  hx.fillRect(HW-130, 188, 10, 10);
+  hx.fillRect(HW-130, 292, 10, 10);
 }
 
-function drawOneCross(cx,cy,a){
-  var P1=`rgba(255,40,150,${a})`;       // rosa pieno
-  var P2=`rgba(255,90,180,${a*0.75})`;  // rosa chiaro
-  var P3=`rgba(240,20,130,${a*0.9})`;   // rosa scuro
+function drawSmallCross(x, y, a) {
+  hx.strokeStyle = `rgba(255,96,220,${0.85*a})`;
+  hx.lineWidth = 1.5;
 
-  // ── Corpo verticale principale ──
-  var vw=20, vh=130;
-  hx.fillStyle=P1;
-  hx.fillRect(cx-vw/2, cy-vh/2, vw, vh);
+  hx.beginPath();
+  hx.moveTo(x-7, y);
+  hx.lineTo(x+7, y);
+  hx.stroke();
 
-  // ── Corpo orizzontale principale ──
-  var hw2=110, hh2=20;
-  hx.fillStyle=P1;
-  hx.fillRect(cx-hw2/2, cy-hh2/2, hw2, hh2);
+  hx.beginPath();
+  hx.moveTo(x, y-7);
+  hx.lineTo(x, y+7);
+  hx.stroke();
+}
 
-  // ── Quadrato centrale più grande ──
-  hx.fillStyle=P2;
-  hx.fillRect(cx-28, cy-28, 56, 56);
-  // Quadrato interno scuro
-  hx.fillStyle=P3;
-  hx.fillRect(cx-14, cy-14, 28, 28);
+/* =========================================================
+   SIDE CROSSES
+========================================================= */
+function drawSideCrosses(a) {
+  drawOneCross(170, 256, a);
+  drawOneCross(HW - 170, 256, a);
+}
 
-  // ── Blocchi pixel laterali (bracci croce) ──
-  // Dallo screenshot: 2 blocchi extra per ogni braccio
-  // Braccio sinistro
-  hx.fillStyle=P2;
-  hx.fillRect(cx-hw2/2-18, cy-10, 20, 20);  // blocco esterno sx
-  hx.fillStyle=P3;
-  hx.fillRect(cx-hw2/2-10, cy-6,  14, 12);  // blocco interno sx
-  // Braccio destro
-  hx.fillStyle=P2;
-  hx.fillRect(cx+hw2/2-2,  cy-10, 20, 20);  // blocco esterno dx
-  hx.fillStyle=P3;
-  hx.fillRect(cx+hw2/2-4,  cy-6,  14, 12);  // blocco interno dx
+function drawOneCross(cx, cy, a) {
+  const pink  = `rgba(255,70,210,${a})`;
+  const pink2 = `rgba(255,120,230,${0.78*a})`;
+  const pink3 = `rgba(255,180,245,${0.18*a})`;
 
-  // ── Estensioni verticali (piccoli pixel sopra/sotto) ──
-  hx.fillStyle=P2;
-  hx.fillRect(cx-vw/2-8, cy-vh/2-6, 10, 16);
-  hx.fillRect(cx+vw/2-2, cy-vh/2-6, 10, 16);
-  hx.fillRect(cx-vw/2-8, cy+vh/2-10, 10, 16);
-  hx.fillRect(cx+vw/2-2, cy+vh/2-10, 10, 16);
+  // colonna verticale
+  hx.fillStyle = pink;
+  hx.fillRect(cx - 10, cy - 74, 20, 148);
 
-  // ── Highlight centrale bianco ──
-  hx.fillStyle=`rgba(255,200,240,${0.3*a})`;
-  hx.fillRect(cx-6, cy-6, 12, 12);
+  // bracci orizzontali
+  hx.fillRect(cx - 62, cy - 10, 124, 20);
 
-  // ── Pixel rumore intorno (come screenshot) ──
-  var noisePx=[
-    [-50,-55,8,6],[-42,-55,4,4],
-    [50-8,-55,8,6],[38,-55,4,4],
-    [-55,50-8,6,8],[-55,38,4,4],
-    [50-1,50-8,6,8],[50-1,38,4,4],
+  // blocchi esterni
+  hx.fillStyle = pink2;
+  hx.fillRect(cx - 76, cy - 10, 14, 20);
+  hx.fillRect(cx + 62, cy - 10, 14, 20);
+
+  hx.fillRect(cx - 10, cy - 88, 20, 14);
+  hx.fillRect(cx - 10, cy + 74, 20, 14);
+
+  // quadratoni centrali pixelati
+  hx.fillStyle = pink2;
+  hx.fillRect(cx - 34, cy - 34, 68, 68);
+
+  hx.fillStyle = pink;
+  hx.fillRect(cx - 18, cy - 18, 36, 36);
+
+  hx.fillStyle = pink3;
+  hx.fillRect(cx - 7, cy - 7, 14, 14);
+
+  // pixel accessori
+  hx.fillStyle = pink2;
+  hx.fillRect(cx - 86, cy - 42, 10, 10);
+  hx.fillRect(cx - 86, cy + 32, 10, 10);
+  hx.fillRect(cx + 76, cy - 42, 10, 10);
+  hx.fillRect(cx + 76, cy + 32, 10, 10);
+
+  // linee verso il centro
+  hx.strokeStyle = `rgba(255,96,220,${0.75*a})`;
+  hx.lineWidth = 1.6;
+
+  hx.beginPath();
+  hx.moveTo(cx + 76, cy - 10);
+  hx.lineTo(cx + 160, cy - 10);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(cx + 76, cy + 10);
+  hx.lineTo(cx + 160, cy + 10);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(cx - 76, cy - 10);
+  hx.lineTo(cx - 160, cy - 10);
+  hx.stroke();
+
+  hx.beginPath();
+  hx.moveTo(cx - 76, cy + 10);
+  hx.lineTo(cx - 160, cy + 10);
+  hx.stroke();
+}
+
+/* =========================================================
+   MICRO MARKS
+========================================================= */
+function drawMicroMarks(a) {
+  const pink = `rgba(255,96,220,${0.7*a})`;
+
+  const pts = [
+    [300,110],[724,110],
+    [300,150],[724,150],
+    [410,130],[614,130],
+    [512,165],
+    [250,260],[774,260]
   ];
-  hx.fillStyle=P2;
-  noisePx.forEach(function(n){ hx.fillRect(cx+n[0],cy+n[1],n[2],n[3]); });
-}
 
-// ─────────────────────────────────────────────
-// BARRA SUPERIORE — identica allo screenshot
-// Tick fitti | cerchi | slot gialli | numero | slot | cerchi | tick
-// ─────────────────────────────────────────────
-function drawTopBar(p){
-  var a=Math.min(1,p*1.1);
-  var cx=HW/2, y=120;
-
-  var PINK=`rgba(255,45,155,${a})`;
-  var PINKD=`rgba(255,45,155,${a*0.5})`;
-  var YELL=`rgba(255,220,0,${a})`;
-
-  // ── Tick fitti (barre verticali piccole) ──
-  // A sinistra e destra del numero centrale
-  var tickCount=10, tickW=4, tickH=18, tickGap=5;
-  var ticksStartL= cx - 24 - tickCount*(tickW+tickGap);
-  var ticksStartR= cx + 24;
-
-  for(var i=0;i<tickCount;i++){
-    // Sinistra
-    var tx=ticksStartL + i*(tickW+tickGap);
-    hx.fillStyle=PINK;
-    hx.fillRect(tx, y, tickW, tickH);
-    // Destra
-    var tx2=ticksStartR + i*(tickW+tickGap);
-    hx.fillStyle=PINK;
-    hx.fillRect(tx2, y, tickW, tickH);
+  hx.fillStyle = pink;
+  for (const p of pts) {
+    hx.fillRect(p[0]-2, p[1]-2, 4, 4);
   }
 
-  // ── Slot gialli countdown (3 blocchi affiancati, come screenshot) ──
-  var slotW=36, slotH=24, slotGap=4, slotCount=3;
-  var slotTotalW=slotCount*(slotW+slotGap)-slotGap;
-  var slotX=cx-slotTotalW/2, slotY=y+tickH+6;
-  var filled=Math.ceil((S.remain/ABILITY_DURATION)*slotCount);
-  for(var s=0;s<slotCount;s++){
-    hx.fillStyle=s<filled?`rgba(255,220,0,${a})`:`rgba(255,220,0,${a*0.15})`;
-    hx.fillRect(slotX+s*(slotW+slotGap), slotY, slotW, slotH);
-    if(s>=filled){
-      hx.strokeStyle=`rgba(255,220,0,${a*0.3})`; hx.lineWidth=1;
-      hx.strokeRect(slotX+s*(slotW+slotGap), slotY, slotW, slotH);
-    }
-  }
+  // reticolo centrale molto debole
+  hx.strokeStyle = `rgba(255,96,220,${0.32*a})`;
+  hx.lineWidth = 1;
 
-  // ── Numero countdown al centro (sopra gli slot) ──
-  var sec=Math.ceil(S.remain);
-  hx.fillStyle=`rgba(255,255,255,${a})`;
-  hx.font=`bold 18px "Courier New"`;
-  hx.textAlign='center'; hx.textBaseline='middle';
-  hx.fillText(String(sec).padStart(2,'0')+'L', cx, y+tickH/2);
-  hx.textBaseline='alphabetic';
-
-  // Dot ai lati del numero
-  hx.fillStyle=PINKD;
-  hx.beginPath(); hx.arc(ticksStartL+tickCount*(tickW+tickGap)+12, y+tickH/2, 3, 0, Math.PI*2); hx.fill();
-  hx.beginPath(); hx.arc(ticksStartR-12, y+tickH/2, 3, 0, Math.PI*2); hx.fill();
-
-  // ── 2 cerchi per lato (identici allo screenshot) ──
-  var circR=22;
-  var circY=y+tickH/2;
-  // Sinistra: a sx dei tick
-  var cL1=ticksStartL-20, cL2=ticksStartL-70;
-  // Destra
-  var cR1=ticksStartR+tickCount*(tickW+tickGap)+20, cR2=ticksStartR+tickCount*(tickW+tickGap)+70;
-
-  [cL1,cL2,cR1,cR2].forEach(function(cx2){
-    hx.beginPath(); hx.arc(cx2,circY,circR,0,Math.PI*2);
-    hx.fillStyle=`rgba(0,0,0,${0.3*a})`; hx.fill();
-    hx.strokeStyle=PINK; hx.lineWidth=2;
-    hx.beginPath(); hx.arc(cx2,circY,circR,0,Math.PI*2); hx.stroke();
-    // Icona cerchio con meno dentro (come screenshot)
-    hx.strokeStyle=PINK; hx.lineWidth=2;
-    hx.beginPath(); hx.moveTo(cx2-10,circY); hx.lineTo(cx2+10,circY); hx.stroke();
-    hx.beginPath(); hx.arc(cx2,circY,14,0,Math.PI*2);
-    hx.strokeStyle=`rgba(255,45,155,${a*0.4})`; hx.lineWidth=1; hx.stroke();
-  });
-
-  // ── Linea orizzontale superiore con angolino dx (come screenshot) ──
-  var lineY=y-8;
-  var lineL=cL2-circR-10, lineR=cx+slotTotalW/2+50;
-  hx.strokeStyle=PINKD; hx.lineWidth=1.2;
   hx.beginPath();
-  hx.moveTo(lineL, lineY);
-  hx.lineTo(lineR-20, lineY);
-  hx.lineTo(lineR, lineY+10);
-  hx.lineTo(lineR, y+tickH+slotH+12);
+  hx.moveTo(500, 246);
+  hx.lineTo(524, 246);
   hx.stroke();
-  // Speculare
-  var lineLR=HW-lineL, lineRR=HW-lineR;
+
   hx.beginPath();
-  hx.moveTo(lineLR, lineY);
-  hx.lineTo(lineRR+20, lineY);
-  hx.lineTo(lineRR, lineY+10);
-  hx.lineTo(lineRR, y+tickH+slotH+12);
+  hx.moveTo(512, 234);
+  hx.lineTo(512, 258);
   hx.stroke();
-}
-
-// ─────────────────────────────────────────────
-// CROSSHAIR
-// ─────────────────────────────────────────────
-function drawCrosshair(){
-  var cx=HW/2, cy=HH/2+30, g=5, l=12;
-  hx.strokeStyle='rgba(255,45,155,0.7)'; hx.lineWidth=1.5; hx.lineCap='round';
-  hx.beginPath(); hx.moveTo(cx,cy-g-l); hx.lineTo(cx,cy-g); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx,cy+g);   hx.lineTo(cx,cy+g+l); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx-g-l,cy); hx.lineTo(cx-g,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+g,cy);   hx.lineTo(cx+g+l,cy); hx.stroke();
-  hx.fillStyle='rgba(255,45,155,0.5)';
-  hx.beginPath(); hx.arc(cx,cy,2,0,Math.PI*2); hx.fill();
-}
-
-// ─────────────────────────────────────────────
-// BUSSOLA
-// ─────────────────────────────────────────────
-function drawCompass(){
-  var cx=HW/2, y0=28, tw=480, tpx=4.0;
-  var half=Math.ceil(tw/2/tpx)+2, deg=S.heading;
-  hx.save(); hx.beginPath(); hx.rect(cx-tw/2,y0,tw,56); hx.clip();
-  for(var d=Math.round(deg)-half; d<=Math.round(deg)+half; d++){
-    var nd=((d%360)+360)%360;
-    var xo=(d-deg)*tpx, x=cx+xo;
-    var dist=Math.abs(xo)/(tw/2), al=Math.max(0,1-dist*1.2);
-    if(al<0.02) continue;
-    var isC=nd%90===0, isM=nd%45===0, is15=nd%15===0;
-    var th=isC?22:isM?15:is15?9:4;
-    hx.strokeStyle=isC?`rgba(255,255,255,${al})`:isM?`rgba(255,45,155,${al})`:`rgba(255,45,155,${al*0.28})`;
-    hx.lineWidth=isC?2.5:isM?1.5:0.7;
-    hx.beginPath(); hx.moveTo(x,y0+4); hx.lineTo(x,y0+4+th); hx.stroke();
-    if(isC){
-      var cl={0:'N',90:'E',180:'S',270:'W'};
-      hx.fillStyle=`rgba(255,255,255,${al})`;
-      hx.font=`bold 13px "Courier New"`;
-      hx.textAlign='center'; hx.fillText(cl[nd]||'',x,y0+44);
-    } else if(isM){
-      var dm={45:'NE',135:'SE',225:'SW',315:'NW'};
-      if(dm[nd]){
-        hx.fillStyle=`rgba(255,45,155,${al*0.85})`;
-        hx.font=`10px "Courier New"`;
-        hx.textAlign='center'; hx.fillText(dm[nd],x,y0+42);
-      }
-    }
-  }
-  hx.restore();
-  var fg=hx.createLinearGradient(cx-tw/2,0,cx+tw/2,0);
-  fg.addColorStop(0,'rgba(0,0,0,1)'); fg.addColorStop(0.07,'rgba(0,0,0,0)');
-  fg.addColorStop(0.93,'rgba(0,0,0,0)'); fg.addColorStop(1,'rgba(0,0,0,1)');
-  hx.fillStyle=fg; hx.fillRect(cx-tw/2,y0,tw,56);
-  var d360=((Math.round(deg)%360)+360)%360;
-  var ca=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var ci=Math.round(d360/22.5)%16;
-  var hs=ca[ci]+' '+String(d360).padStart(3,'0');
-  var bw=112,bh=26,bx=cx-bw/2,by=y0-2;
-  hx.fillStyle='rgba(0,0,0,0.6)'; hx.fillRect(bx,by,bw,bh);
-  hx.strokeStyle='rgba(255,45,155,0.8)'; hx.lineWidth=1.5; hx.strokeRect(bx,by,bw,bh);
-  hx.fillStyle='rgba(255,255,255,0.92)';
-  hx.font=`bold 13px "Courier New"`;
-  hx.textAlign='center'; hx.textBaseline='middle';
-  hx.fillText(hs,cx,by+bh/2); hx.textBaseline='alphabetic';
-  hx.strokeStyle='rgba(255,45,155,0.55)'; hx.lineWidth=1.5;
-  hx.beginPath(); hx.moveTo(bx-3,by); hx.lineTo(bx-3,by+bh); hx.stroke();
-  hx.beginPath(); hx.moveTo(bx+bw+3,by); hx.lineTo(bx+bw+3,by+bh); hx.stroke();
-  hx.fillStyle='#ff2d9b';
-  hx.beginPath(); hx.moveTo(cx-5,y0); hx.lineTo(cx+5,y0); hx.lineTo(cx,y0+8); hx.closePath(); hx.fill();
-}
-
-// ─────────────────────────────────────────────
-// TIMER
-// ─────────────────────────────────────────────
-function drawTimer(){
-  var tx=88,ty=40,tw=106,th=34,r=17;
-  hx.fillStyle='rgba(255,255,255,0.1)';
-  pill(tx-tw/2,ty-th/2,tw,th,r); hx.fill();
-  hx.strokeStyle='rgba(255,255,255,0.75)'; hx.lineWidth=2;
-  pill(tx-tw/2,ty-th/2,tw,th,r); hx.stroke();
-  var m=Math.floor(S.timerSec/60),s=S.timerSec%60;
-  hx.fillStyle='rgba(255,255,255,0.92)';
-  hx.font=`bold 17px "Courier New"`;
-  hx.textAlign='center'; hx.textBaseline='middle';
-  hx.fillText((m<10?'0':'')+m+':'+(s<10?'0':'')+s,tx,ty);
-  hx.textBaseline='alphabetic';
-}
-function pill(x,y,w,h,r){
-  hx.beginPath();
-  hx.moveTo(x+r,y); hx.lineTo(x+w-r,y); hx.quadraticCurveTo(x+w,y,x+w,y+r);
-  hx.lineTo(x+w,y+h-r); hx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-  hx.lineTo(x+r,y+h); hx.quadraticCurveTo(x,y+h,x,y+h-r);
-  hx.lineTo(x,y+r); hx.quadraticCurveTo(x,y,x+r,y); hx.closePath();
-}
-
-// ─────────────────────────────────────────────
-// HP BAR
-// ─────────────────────────────────────────────
-function drawHP(){
-  var x=50,y=HH-50,bw=200,bh=10;
-  hx.fillStyle='rgba(255,255,255,0.08)'; hx.fillRect(x,y,bw,bh);
-  hx.fillStyle='rgba(100,255,160,0.9)';  hx.fillRect(x,y,(S.hp/100)*bw,bh);
-  hx.strokeStyle='rgba(255,255,255,0.25)'; hx.lineWidth=1; hx.strokeRect(x,y,bw,bh);
-  hx.fillStyle='rgba(255,45,155,0.75)';
-  hx.font=`bold 10px "Courier New"`; hx.textAlign='left';
-  hx.fillText('A1  ROBOLUCA#8035',x,y+bh+13);
 }
 </script>
 </body>
