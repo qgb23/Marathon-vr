@@ -143,7 +143,11 @@
     <div>BUILD</div><div><span>v4.1.7-rc</span></div>
   </div>
   <div class="hud-line"></div>
+  <div id="loading-bar" style="width:320px;height:2px;background:#00ff8820;margin-bottom:16px;display:none">
+    <div id="loading-fill" style="height:100%;background:#00ff88;width:0%;transition:width 0.3s"></div>
+  </div>
   <button id="enter-btn">[ ENTER TAU CETI IV ]</button>
+  <div id="loading-text" style="font-size:11px;letter-spacing:0.2em;color:#00ff8870;margin-top:12px;display:none">CARICAMENTO MODULI...</div>
   <div id="error-msg"></div>
 </div>
 
@@ -152,7 +156,7 @@
 <canvas id="c"></canvas>
 
 <script type="module">
-import * as THREE from 'https://cdn.skypack.dev/three@0.128.0';
+import * as THREE from 'https://esm.sh/three@0.128.0';
 
 let renderer, scene, camera, clock;
 let handLeft, handRight;
@@ -617,45 +621,75 @@ function render(timestamp, frame) {
 }
 
 // ── ENTER XR ────────────────────────────────────────────────────
-window.enterXR = async function enterXR() {
+async function enterXR() {
   if (!renderer) init();
 
-  const errEl = document.getElementById('error-msg');
+  const errEl    = document.getElementById('error-msg');
+  const loadBar  = document.getElementById('loading-bar');
+  const loadFill = document.getElementById('loading-fill');
+  const loadTxt  = document.getElementById('loading-text');
+  const btn      = document.getElementById('enter-btn');
+
   errEl.style.display = 'none';
+  loadBar.style.display = 'block';
+  loadTxt.style.display = 'block';
+  btn.disabled = true;
+  btn.textContent = '[ INIZIALIZZAZIONE... ]';
+
+  // Animate loading bar
+  let pct = 0;
+  const barAnim = setInterval(() => {
+    pct = Math.min(pct + 5, 90);
+    loadFill.style.width = pct + '%';
+  }, 80);
+
+  const finish = () => {
+    clearInterval(barAnim);
+    loadFill.style.width = '100%';
+    setTimeout(() => {
+      loadBar.style.display = 'none';
+      loadTxt.style.display = 'none';
+      btn.disabled = false;
+      btn.textContent = '[ ENTER TAU CETI IV ]';
+    }, 400);
+  };
 
   if (!navigator.xr) {
-    errEl.textContent = '⚠ WebXR non supportato. Apri questa pagina dal browser del Meta Quest 3.';
+    finish();
+    errEl.textContent = '⚠ WebXR non supportato. Apri dal Meta Quest Browser.';
     errEl.style.display = 'block';
     return;
   }
 
-  const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-  if (!supported) {
-    errEl.textContent = '⚠ AR immersivo non disponibile. Assicurati di usare il Meta Quest 3 con passthrough abilitato.';
-    errEl.style.display = 'block';
-    // Fallback: try immersive-vr
-    tryVR();
-    return;
-  }
+  // Try immersive-ar first (passthrough), then vr
+  const arOk = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+  const mode = arOk ? 'immersive-ar' : 'immersive-vr';
+
+  loadTxt.textContent = arOk ? 'MODALITÀ PASSTHROUGH...' : 'MODALITÀ VR...';
 
   try {
-    const session = await navigator.xr.requestSession('immersive-ar', {
+    const session = await navigator.xr.requestSession(mode, {
       requiredFeatures: ['local-floor'],
-      optionalFeatures: ['hand-tracking', 'layers'],
+      optionalFeatures: ['hand-tracking', 'bounded-floor'],
     });
     xrSession = session;
-    renderer.xr.setSession(session);
+    await renderer.xr.setSession(session);
     setupHandTracking(session);
+    finish();
     document.getElementById('overlay').style.display = 'none';
+    // In VR mode add a dark background
+    if (mode === 'immersive-vr') renderer.setClearColor(0x000d06, 1);
     session.addEventListener('end', () => {
       document.getElementById('overlay').style.display = 'flex';
+      renderer.setClearColor(0x000000, 0);
       xrSession = null;
     });
   } catch(e) {
-    errEl.textContent = '⚠ Errore sessione AR: ' + e.message;
+    finish();
+    errEl.textContent = '⚠ ' + e.message + ' — Assicurati di usare il Meta Quest Browser.';
     errEl.style.display = 'block';
   }
-};
+}
 
 async function tryVR() {
   const errEl = document.getElementById('error-msg');
@@ -688,6 +722,7 @@ init();
 
 // Attach button inside module (fixes onclick scope in ES modules)
 document.getElementById("enter-btn").addEventListener("click", enterXR);
+document.getElementById('enter-btn').addEventListener('click', enterXR);
 </script>
 </body>
 </html>
