@@ -33,7 +33,7 @@ canvas { display:none; position:fixed; inset:0; width:100%; height:100%; }
 <button id="btn" onclick="startAR()">Enter AR</button>
 <div id="sub">
   Quest 3 · immersive-ar · hand tracking<br>
-  <span style="color:rgba(255,45,155,.6)">Tocca il palmo destro con l'indice sinistro per attivare l'HUD</span>
+  <span style="color:rgba(255,45,155,.6)">Tocca il palmo destro con l'indice sinistro</span>
 </div>
 <div id="err"></div>
 <canvas id="c"></canvas>
@@ -42,43 +42,23 @@ canvas { display:none; position:fixed; inset:0; width:100%; height:100%; }
 // ─────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────
-var ABILITY_DURATION = 8;   // secondi durata HUD
-var TOUCH_DIST       = 0.06; // metri soglia tocco
-var COOLDOWN_TOUCH   = 1.5;  // secondi prima di poter riattivare
-var SEGS             = 10;   // segmenti per lato barra
+var ABILITY_DURATION = 8;
+var TOUCH_DIST       = 0.06;
+var COOLDOWN_TOUCH   = 1.5;
+var SEGS             = 10;
 
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
 var S = {
-  heading:   90,
-  timerSec:  18*60+36,
-  hp:        80,
-
-  // HUD visibile solo quando attivo
+  heading:      90,
+  timerSec:     18*60+36,
+  hp:           80,
   hudVisible:   false,
-  remain:       0,        // secondi rimasti countdown
-  touchCool:    0,        // cooldown tocco
+  remain:       0,
+  touchCool:    0,
   wasTouching:  false,
 };
-
-// ─────────────────────────────────────────────
-// PIXEL PATTERN (bordi, generato una volta)
-// ─────────────────────────────────────────────
-var PIX = [];
-(function(){
-  function rn(s){ var x=Math.sin(s+1)*93847; return x-Math.floor(x); }
-  for(var i=0;i<180;i++){
-    PIX.push({
-      side: i%2===0 ? 'L':'R',
-      x:  rn(i*3.1)*190,
-      y:  rn(i*7.3)*512,
-      w:  Math.floor(rn(i*11.7)*20)+3,
-      h:  Math.floor(rn(i*5.2)*16)+2,
-      a:  rn(i*2.9)*0.6+0.15,
-    });
-  }
-})();
 
 // ─────────────────────────────────────────────
 // WebXR
@@ -88,57 +68,46 @@ var canvas = document.getElementById('c');
 
 async function startAR(){
   document.getElementById('err').style.display='none';
-  if(!navigator.xr) return err('WebXR non disponibile. Usa Meta Browser su Quest 3.');
+  if(!navigator.xr) return showErr('WebXR non disponibile. Usa Meta Browser su Quest 3.');
   var ok = await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
-  if(!ok) return err('immersive-ar non supportato su questo dispositivo.');
-
-  // Prova prima con hand-tracking, poi fallback senza
+  if(!ok) return showErr('immersive-ar non supportato.');
   try {
     session = await navigator.xr.requestSession('immersive-ar',{
       requiredFeatures:['local','hand-tracking'],
     });
   } catch(e){
     try {
-      session = await navigator.xr.requestSession('immersive-ar',{
-        requiredFeatures:['local'],
-      });
-    } catch(e2){ return err('Errore: '+e2.message); }
+      session = await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local']});
+    } catch(e2){ return showErr('Errore: '+e2.message); }
   }
-
   document.getElementById('btn').style.display='none';
   document.getElementById('sub').style.display='none';
   canvas.style.display='block';
 
   gl = canvas.getContext('webgl2',{xrCompatible:true,alpha:true,premultipliedAlpha:false})
     || canvas.getContext('webgl', {xrCompatible:true,alpha:true,premultipliedAlpha:false});
-
-  await session.updateRenderState({
-    baseLayer: new XRWebGLLayer(session,gl,{alpha:true}),
-  });
+  await session.updateRenderState({ baseLayer: new XRWebGLLayer(session,gl,{alpha:true}) });
   refSpace = await session.requestReferenceSpace('local');
 
-  // SPACEBAR per test desktop
   document.addEventListener('keydown',function(e){
-    if(e.code==='Space') toggleHUD();
+    if(e.code==='Space') triggerAbility();
   });
-
   setInterval(function(){ S.timerSec=Math.max(0,S.timerSec-1); },1000);
   initGL();
-  session.requestAnimationFrame(frame);
+  session.requestAnimationFrame(xrFrame);
 }
+function showErr(m){ var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
 
-function err(m){ var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
-
-function toggleHUD(){
-  if(S.hudVisible) return; // già attivo, lascia finire
-  S.hudVisible = true;
-  S.remain     = ABILITY_DURATION;
+function triggerAbility(){
+  if(S.hudVisible) return;
+  S.hudVisible=true;
+  S.remain=ABILITY_DURATION;
 }
 
 // ─────────────────────────────────────────────
-// GESTURE — indice sinistro tocca palmo destro
+// GESTURE
 // ─────────────────────────────────────────────
-function jp(hand, name, frame){
+function jp(hand,name,frame){
   if(!hand) return null;
   var j=hand.get(name); if(!j) return null;
   var p=frame.getJointPose(j,refSpace); if(!p) return null;
@@ -148,76 +117,53 @@ function d3(a,b){
   var dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
   return Math.sqrt(dx*dx+dy*dy+dz*dz);
 }
-function midpoint(a,b){
-  return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, z:(a.z+b.z)/2};
-}
-
 function checkTouch(frame){
   if(S.touchCool>0) return;
-
-  var iTip = jp(handL,'index-finger-tip',frame);
-  var wR   = jp(handR,'wrist',frame);
-  var mR   = jp(handR,'middle-finger-phalanx-proximal',frame);
+  var iTip=jp(handL,'index-finger-tip',frame);
+  var wR  =jp(handR,'wrist',frame);
+  var mR  =jp(handR,'middle-finger-phalanx-proximal',frame);
   if(!iTip||!wR||!mR) return;
-
-  var palmCenter = midpoint(wR,mR);
-  var dist = d3(iTip, palmCenter);
-
-  if(dist < TOUCH_DIST && !S.wasTouching){
-    S.wasTouching = true;
-    toggleHUD();
-  }
-  if(dist > TOUCH_DIST*1.8){
-    S.wasTouching = false;
-  }
+  var palm={x:(wR.x+mR.x)/2,y:(wR.y+mR.y)/2,z:(wR.z+mR.z)/2};
+  var dist=d3(iTip,palm);
+  if(dist<TOUCH_DIST && !S.wasTouching){ S.wasTouching=true; triggerAbility(); }
+  if(dist>TOUCH_DIST*1.8) S.wasTouching=false;
 }
 
 // ─────────────────────────────────────────────
-// WebGL setup — quad view-space, proj per-eye
+// WebGL
 // ─────────────────────────────────────────────
 var VERT=`precision highp float;
 attribute vec3 aPos; attribute vec2 aUV;
 uniform mat4 uProj; varying vec2 vUV;
 void main(){ gl_Position=uProj*vec4(aPos,1.0); vUV=aUV; }`;
-
 var FRAG=`precision mediump float;
 varying vec2 vUV; uniform sampler2D uTex;
 void main(){ vec4 c=texture2D(uTex,vUV); gl_FragColor=vec4(c.rgb*c.a,c.a); }`;
 
 var prog,vbo,tex,aPos,aUV,uProj,uTex_;
-
-// Quad: 1.8m × 0.9m a 1.5m, centro leggermente in alto
 var QW=1.8, QH=0.9, QZ=-1.5, QY=0.08;
 
 function initGL(){
-  var vs=sh(gl.VERTEX_SHADER,VERT), fs=sh(gl.FRAGMENT_SHADER,FRAG);
+  var vs=mkSh(gl.VERTEX_SHADER,VERT), fs=mkSh(gl.FRAGMENT_SHADER,FRAG);
   prog=gl.createProgram();
   gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
-
-  var hw=QW/2, hh=QH/2, yb=-hh+QY, yt=hh+QY;
+  var hw=QW/2,hh=QH/2,yb=-hh+QY,yt=hh+QY;
   vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
-    -hw,yb,QZ, 0,1,
-     hw,yb,QZ, 1,1,
-    -hw,yt,QZ, 0,0,
-     hw,yt,QZ, 1,0,
+    -hw,yb,QZ,0,1, hw,yb,QZ,1,1, -hw,yt,QZ,0,0, hw,yt,QZ,1,0
   ]),gl.STATIC_DRAW);
-
-  aPos=gl.getAttribLocation(prog,'aPos');
-  aUV =gl.getAttribLocation(prog,'aUV');
-  uProj=gl.getUniformLocation(prog,'uProj');
-  uTex_=gl.getUniformLocation(prog,'uTex');
-
+  aPos=gl.getAttribLocation(prog,'aPos'); aUV=gl.getAttribLocation(prog,'aUV');
+  uProj=gl.getUniformLocation(prog,'uProj'); uTex_=gl.getUniformLocation(prog,'uTex');
   tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 }
-function sh(t,s){ var x=gl.createShader(t); gl.shaderSource(x,s); gl.compileShader(x); return x; }
+function mkSh(t,s){ var x=gl.createShader(t); gl.shaderSource(x,s); gl.compileShader(x); return x; }
 
 // ─────────────────────────────────────────────
-// HUD Canvas 2D — 1024×512
+// HUD Canvas  1024 × 512
 // ─────────────────────────────────────────────
 var HW=1024, HH=512;
 var hc=document.createElement('canvas'); hc.width=HW; hc.height=HH;
@@ -227,19 +173,16 @@ var hx=hc.getContext('2d');
 // XR LOOP
 // ─────────────────────────────────────────────
 var lastT=0;
-function frame(t,xrframe){
-  session.requestAnimationFrame(frame);
+function xrFrame(t,frame){
+  session.requestAnimationFrame(xrFrame);
   var dt=lastT?(t-lastT)/1000:0.016; lastT=t;
 
-  // Heading dal quaternion
-  var pose=xrframe.getViewerPose(refSpace);
+  var pose=frame.getViewerPose(refSpace);
   if(pose){
     var q=pose.transform.orientation;
     var yaw=Math.atan2(2*(q.y*q.w+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
     S.heading=((-yaw*180/Math.PI)%360+360)%360;
   }
-
-  // Aggiorna mani
   if(session.inputSources){
     for(var src of session.inputSources){
       if(src.hand){
@@ -248,14 +191,8 @@ function frame(t,xrframe){
       }
     }
   }
-
-  // Cooldown tocco
   if(S.touchCool>0) S.touchCool=Math.max(0,S.touchCool-dt);
-
-  // Gesture check
-  checkTouch(xrframe);
-
-  // Countdown HUD
+  checkTouch(frame);
   if(S.hudVisible){
     S.remain=Math.max(0,S.remain-dt);
     if(S.remain<=0){
@@ -264,7 +201,6 @@ function frame(t,xrframe){
       S.wasTouching=false;
     }
   }
-
   if(!pose) return;
 
   var layer=session.renderState.baseLayer;
@@ -272,22 +208,18 @@ function frame(t,xrframe){
   gl.clearColor(0,0,0,0);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
-  // Disegna HUD su canvas 2D
   drawHUD();
 
-  // Upload texture
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,tex);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hc);
 
-  // Render per ogni occhio
   for(var view of pose.views){
     var vp=layer.getViewport(view);
     gl.viewport(vp.x,vp.y,vp.width,vp.height);
     drawEye(view.projectionMatrix);
   }
 }
-
 function drawEye(proj){
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
@@ -305,20 +237,323 @@ function drawEye(proj){
 // ─────────────────────────────────────────────
 function drawHUD(){
   hx.clearRect(0,0,HW,HH);
-
-  // Sempre visibili
   drawCompass();
   drawTimer();
   drawHP();
-
-  // Solo quando HUD attivo
   if(S.hudVisible){
     var p=S.remain/ABILITY_DURATION; // 1→0
-    drawBorders(p);
-    drawAbilityBars(p);
-    drawCircles();
-    drawCross();
+    drawGradient(p);   // gradiente per primo (sotto tutto)
+    drawFrame(p);      // cornice laterale
+    drawBigCrosses(p); // croci pixelate
+    drawTopBar(p);     // barra superiore con cerchi e slot
+    drawCrosshair();
   }
+}
+
+// ─────────────────────────────────────────────
+// GRADIENTE — parte dagli angoli, copre tutta l'altezza
+// Radial gradient da ogni angolo + lineare laterale
+// ─────────────────────────────────────────────
+function drawGradient(p){
+  var a=Math.min(1,p*1.1);
+
+  // Angolo in alto a sinistra
+  var g1=hx.createRadialGradient(0,0,0,0,0,HW*0.55);
+  g1.addColorStop(0,   `rgba(255,20,140,${0.55*a})`);
+  g1.addColorStop(0.35,`rgba(255,20,140,${0.22*a})`);
+  g1.addColorStop(0.65,`rgba(255,20,140,${0.06*a})`);
+  g1.addColorStop(1,   'rgba(255,20,140,0)');
+  hx.fillStyle=g1; hx.fillRect(0,0,HW,HH);
+
+  // Angolo in alto a destra
+  var g2=hx.createRadialGradient(HW,0,0,HW,0,HW*0.55);
+  g2.addColorStop(0,   `rgba(255,20,140,${0.55*a})`);
+  g2.addColorStop(0.35,`rgba(255,20,140,${0.22*a})`);
+  g2.addColorStop(0.65,`rgba(255,20,140,${0.06*a})`);
+  g2.addColorStop(1,   'rgba(255,20,140,0)');
+  hx.fillStyle=g2; hx.fillRect(0,0,HW,HH);
+
+  // Angolo in basso a sinistra
+  var g3=hx.createRadialGradient(0,HH,0,0,HH,HW*0.45);
+  g3.addColorStop(0,   `rgba(255,20,140,${0.40*a})`);
+  g3.addColorStop(0.4, `rgba(255,20,140,${0.14*a})`);
+  g3.addColorStop(1,   'rgba(255,20,140,0)');
+  hx.fillStyle=g3; hx.fillRect(0,0,HW,HH);
+
+  // Angolo in basso a destra
+  var g4=hx.createRadialGradient(HW,HH,0,HW,HH,HW*0.45);
+  g4.addColorStop(0,   `rgba(255,20,140,${0.40*a})`);
+  g4.addColorStop(0.4, `rgba(255,20,140,${0.14*a})`);
+  g4.addColorStop(1,   'rgba(255,20,140,0)');
+  hx.fillStyle=g4; hx.fillRect(0,0,HW,HH);
+}
+
+// ─────────────────────────────────────────────
+// FRAME LATERALE — identico allo screenshot
+// Linea verticale + angolo arrotondato + decorazioni
+// ─────────────────────────────────────────────
+function drawFrame(p){
+  var a=Math.min(1,p*1.1);
+  var col=`rgba(255,45,155,${a})`;
+  var colD=`rgba(255,45,155,${a*0.5})`;
+
+  [0,1].forEach(function(side){
+    var mx = side===0 ? 38 : HW-38;  // x della linea verticale principale
+    var dir = side===0 ? 1 : -1;     // direzione verso centro (+1 o -1)
+
+    // ── Linea verticale principale ──
+    hx.strokeStyle=col; hx.lineWidth=2;
+    // Solo la parte alta e bassa (come screenshot, interrotta dalla croce)
+    hx.beginPath(); hx.moveTo(mx,18); hx.lineTo(mx, HH*0.32); hx.stroke();
+    hx.beginPath(); hx.moveTo(mx,HH*0.62); hx.lineTo(mx, HH-18); hx.stroke();
+
+    // ── Angolo superiore arrotondato ──
+    var r=12;
+    hx.strokeStyle=col; hx.lineWidth=2;
+    hx.beginPath();
+    if(side===0){
+      hx.moveTo(mx, 18);
+      hx.lineTo(mx+r, 18);
+      // linea orizzontale superiore
+      hx.lineTo(HW*0.28, 18);
+    } else {
+      hx.moveTo(mx, 18);
+      hx.lineTo(mx-r, 18);
+      hx.lineTo(HW*0.72, 18);
+    }
+    hx.stroke();
+
+    // ── Angolo inferiore arrotondato ──
+    hx.beginPath();
+    if(side===0){
+      hx.moveTo(mx, HH-18);
+      hx.lineTo(mx+r, HH-18);
+      hx.lineTo(HW*0.25, HH-18);
+    } else {
+      hx.moveTo(mx, HH-18);
+      hx.lineTo(mx-r, HH-18);
+      hx.lineTo(HW*0.75, HH-18);
+    }
+    hx.stroke();
+
+    // ── Piccoli quadratini angolo (come screenshot) ──
+    hx.fillStyle=col;
+    hx.fillRect(mx-1, 16, 4, 4);    // angolo top
+    hx.fillRect(mx-1, HH-20, 4, 4); // angolo bottom
+
+    // ── Stella/sparkle agli angoli esterni (4 punte) ──
+    drawSparkle(side===0 ? mx-16 : mx+16, HH*0.5, a, 10);
+
+    // ── Decorazioni UI piccole (dashes, dots) ──
+    // Trattini brevi orizzontali (come screenshot: "=====")
+    hx.strokeStyle=colD; hx.lineWidth=1;
+    hx.setLineDash([6,3]);
+    hx.beginPath();
+    hx.moveTo(side===0 ? mx+8 : mx-60, HH*0.28);
+    hx.lineTo(side===0 ? mx+60 : mx-8, HH*0.28);
+    hx.stroke();
+    hx.beginPath();
+    hx.moveTo(side===0 ? mx+8 : mx-60, HH*0.72);
+    hx.lineTo(side===0 ? mx+60 : mx-8, HH*0.72);
+    hx.stroke();
+    hx.setLineDash([]);
+
+    // Piccoli "UI" quadratini (come screenshot, due per lato)
+    hx.fillStyle=colD;
+    hx.fillRect(side===0 ? mx+14 : mx-22, HH*0.30-3, 8, 6);
+    hx.fillRect(side===0 ? mx+14 : mx-22, HH*0.70-3, 8, 6);
+
+    // Stella sparkle piccola intermedia
+    drawSparkle(side===0 ? mx-14 : mx+14, HH*0.28, a*0.6, 6);
+    drawSparkle(side===0 ? mx-14 : mx+14, HH*0.72, a*0.6, 6);
+  });
+}
+
+function drawSparkle(cx,cy,alpha,size){
+  hx.strokeStyle=`rgba(255,45,155,${alpha})`;
+  hx.lineWidth=1.5; hx.lineCap='round';
+  hx.beginPath(); hx.moveTo(cx,cy-size); hx.lineTo(cx,cy+size); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx-size,cy); hx.lineTo(cx+size,cy); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx-size*0.6,cy-size*0.6); hx.lineTo(cx+size*0.6,cy+size*0.6); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx+size*0.6,cy-size*0.6); hx.lineTo(cx-size*0.6,cy+size*0.6); hx.stroke();
+}
+
+// ─────────────────────────────────────────────
+// CROCI PIXEL — identiche allo screenshot
+// Struttura precisa: corpo verticale + orizzontale + quadrati laterali
+// ─────────────────────────────────────────────
+function drawBigCrosses(p){
+  var a=Math.min(1,p*1.1);
+  // Posizione x delle croci: ~22% e 78% della larghezza
+  drawOneCross(HW*0.215, HH*0.455, a);
+  drawOneCross(HW*0.785, HH*0.455, a);
+}
+
+function drawOneCross(cx,cy,a){
+  var P1=`rgba(255,40,150,${a})`;       // rosa pieno
+  var P2=`rgba(255,90,180,${a*0.75})`;  // rosa chiaro
+  var P3=`rgba(240,20,130,${a*0.9})`;   // rosa scuro
+
+  // ── Corpo verticale principale ──
+  var vw=20, vh=130;
+  hx.fillStyle=P1;
+  hx.fillRect(cx-vw/2, cy-vh/2, vw, vh);
+
+  // ── Corpo orizzontale principale ──
+  var hw2=110, hh2=20;
+  hx.fillStyle=P1;
+  hx.fillRect(cx-hw2/2, cy-hh2/2, hw2, hh2);
+
+  // ── Quadrato centrale più grande ──
+  hx.fillStyle=P2;
+  hx.fillRect(cx-28, cy-28, 56, 56);
+  // Quadrato interno scuro
+  hx.fillStyle=P3;
+  hx.fillRect(cx-14, cy-14, 28, 28);
+
+  // ── Blocchi pixel laterali (bracci croce) ──
+  // Dallo screenshot: 2 blocchi extra per ogni braccio
+  // Braccio sinistro
+  hx.fillStyle=P2;
+  hx.fillRect(cx-hw2/2-18, cy-10, 20, 20);  // blocco esterno sx
+  hx.fillStyle=P3;
+  hx.fillRect(cx-hw2/2-10, cy-6,  14, 12);  // blocco interno sx
+  // Braccio destro
+  hx.fillStyle=P2;
+  hx.fillRect(cx+hw2/2-2,  cy-10, 20, 20);  // blocco esterno dx
+  hx.fillStyle=P3;
+  hx.fillRect(cx+hw2/2-4,  cy-6,  14, 12);  // blocco interno dx
+
+  // ── Estensioni verticali (piccoli pixel sopra/sotto) ──
+  hx.fillStyle=P2;
+  hx.fillRect(cx-vw/2-8, cy-vh/2-6, 10, 16);
+  hx.fillRect(cx+vw/2-2, cy-vh/2-6, 10, 16);
+  hx.fillRect(cx-vw/2-8, cy+vh/2-10, 10, 16);
+  hx.fillRect(cx+vw/2-2, cy+vh/2-10, 10, 16);
+
+  // ── Highlight centrale bianco ──
+  hx.fillStyle=`rgba(255,200,240,${0.3*a})`;
+  hx.fillRect(cx-6, cy-6, 12, 12);
+
+  // ── Pixel rumore intorno (come screenshot) ──
+  var noisePx=[
+    [-50,-55,8,6],[-42,-55,4,4],
+    [50-8,-55,8,6],[38,-55,4,4],
+    [-55,50-8,6,8],[-55,38,4,4],
+    [50-1,50-8,6,8],[50-1,38,4,4],
+  ];
+  hx.fillStyle=P2;
+  noisePx.forEach(function(n){ hx.fillRect(cx+n[0],cy+n[1],n[2],n[3]); });
+}
+
+// ─────────────────────────────────────────────
+// BARRA SUPERIORE — identica allo screenshot
+// Tick fitti | cerchi | slot gialli | numero | slot | cerchi | tick
+// ─────────────────────────────────────────────
+function drawTopBar(p){
+  var a=Math.min(1,p*1.1);
+  var cx=HW/2, y=120;
+
+  var PINK=`rgba(255,45,155,${a})`;
+  var PINKD=`rgba(255,45,155,${a*0.5})`;
+  var YELL=`rgba(255,220,0,${a})`;
+
+  // ── Tick fitti (barre verticali piccole) ──
+  // A sinistra e destra del numero centrale
+  var tickCount=10, tickW=4, tickH=18, tickGap=5;
+  var ticksStartL= cx - 24 - tickCount*(tickW+tickGap);
+  var ticksStartR= cx + 24;
+
+  for(var i=0;i<tickCount;i++){
+    // Sinistra
+    var tx=ticksStartL + i*(tickW+tickGap);
+    hx.fillStyle=PINK;
+    hx.fillRect(tx, y, tickW, tickH);
+    // Destra
+    var tx2=ticksStartR + i*(tickW+tickGap);
+    hx.fillStyle=PINK;
+    hx.fillRect(tx2, y, tickW, tickH);
+  }
+
+  // ── Slot gialli countdown (3 blocchi affiancati, come screenshot) ──
+  var slotW=36, slotH=24, slotGap=4, slotCount=3;
+  var slotTotalW=slotCount*(slotW+slotGap)-slotGap;
+  var slotX=cx-slotTotalW/2, slotY=y+tickH+6;
+  var filled=Math.ceil((S.remain/ABILITY_DURATION)*slotCount);
+  for(var s=0;s<slotCount;s++){
+    hx.fillStyle=s<filled?`rgba(255,220,0,${a})`:`rgba(255,220,0,${a*0.15})`;
+    hx.fillRect(slotX+s*(slotW+slotGap), slotY, slotW, slotH);
+    if(s>=filled){
+      hx.strokeStyle=`rgba(255,220,0,${a*0.3})`; hx.lineWidth=1;
+      hx.strokeRect(slotX+s*(slotW+slotGap), slotY, slotW, slotH);
+    }
+  }
+
+  // ── Numero countdown al centro (sopra gli slot) ──
+  var sec=Math.ceil(S.remain);
+  hx.fillStyle=`rgba(255,255,255,${a})`;
+  hx.font=`bold 18px "Courier New"`;
+  hx.textAlign='center'; hx.textBaseline='middle';
+  hx.fillText(String(sec).padStart(2,'0')+'L', cx, y+tickH/2);
+  hx.textBaseline='alphabetic';
+
+  // Dot ai lati del numero
+  hx.fillStyle=PINKD;
+  hx.beginPath(); hx.arc(ticksStartL+tickCount*(tickW+tickGap)+12, y+tickH/2, 3, 0, Math.PI*2); hx.fill();
+  hx.beginPath(); hx.arc(ticksStartR-12, y+tickH/2, 3, 0, Math.PI*2); hx.fill();
+
+  // ── 2 cerchi per lato (identici allo screenshot) ──
+  var circR=22;
+  var circY=y+tickH/2;
+  // Sinistra: a sx dei tick
+  var cL1=ticksStartL-20, cL2=ticksStartL-70;
+  // Destra
+  var cR1=ticksStartR+tickCount*(tickW+tickGap)+20, cR2=ticksStartR+tickCount*(tickW+tickGap)+70;
+
+  [cL1,cL2,cR1,cR2].forEach(function(cx2){
+    hx.beginPath(); hx.arc(cx2,circY,circR,0,Math.PI*2);
+    hx.fillStyle=`rgba(0,0,0,${0.3*a})`; hx.fill();
+    hx.strokeStyle=PINK; hx.lineWidth=2;
+    hx.beginPath(); hx.arc(cx2,circY,circR,0,Math.PI*2); hx.stroke();
+    // Icona cerchio con meno dentro (come screenshot)
+    hx.strokeStyle=PINK; hx.lineWidth=2;
+    hx.beginPath(); hx.moveTo(cx2-10,circY); hx.lineTo(cx2+10,circY); hx.stroke();
+    hx.beginPath(); hx.arc(cx2,circY,14,0,Math.PI*2);
+    hx.strokeStyle=`rgba(255,45,155,${a*0.4})`; hx.lineWidth=1; hx.stroke();
+  });
+
+  // ── Linea orizzontale superiore con angolino dx (come screenshot) ──
+  var lineY=y-8;
+  var lineL=cL2-circR-10, lineR=cx+slotTotalW/2+50;
+  hx.strokeStyle=PINKD; hx.lineWidth=1.2;
+  hx.beginPath();
+  hx.moveTo(lineL, lineY);
+  hx.lineTo(lineR-20, lineY);
+  hx.lineTo(lineR, lineY+10);
+  hx.lineTo(lineR, y+tickH+slotH+12);
+  hx.stroke();
+  // Speculare
+  var lineLR=HW-lineL, lineRR=HW-lineR;
+  hx.beginPath();
+  hx.moveTo(lineLR, lineY);
+  hx.lineTo(lineRR+20, lineY);
+  hx.lineTo(lineRR, lineY+10);
+  hx.lineTo(lineRR, y+tickH+slotH+12);
+  hx.stroke();
+}
+
+// ─────────────────────────────────────────────
+// CROSSHAIR
+// ─────────────────────────────────────────────
+function drawCrosshair(){
+  var cx=HW/2, cy=HH/2+30, g=5, l=12;
+  hx.strokeStyle='rgba(255,45,155,0.7)'; hx.lineWidth=1.5; hx.lineCap='round';
+  hx.beginPath(); hx.moveTo(cx,cy-g-l); hx.lineTo(cx,cy-g); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx,cy+g);   hx.lineTo(cx,cy+g+l); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx-g-l,cy); hx.lineTo(cx-g,cy); hx.stroke();
+  hx.beginPath(); hx.moveTo(cx+g,cy);   hx.lineTo(cx+g+l,cy); hx.stroke();
+  hx.fillStyle='rgba(255,45,155,0.5)';
+  hx.beginPath(); hx.arc(cx,cy,2,0,Math.PI*2); hx.fill();
 }
 
 // ─────────────────────────────────────────────
@@ -326,25 +561,18 @@ function drawHUD(){
 // ─────────────────────────────────────────────
 function drawCompass(){
   var cx=HW/2, y0=28, tw=480, tpx=4.0;
-  var half=Math.ceil(tw/2/tpx)+2;
-  var deg=S.heading;
-
-  hx.save();
-  hx.beginPath(); hx.rect(cx-tw/2,y0,tw,56); hx.clip();
-
+  var half=Math.ceil(tw/2/tpx)+2, deg=S.heading;
+  hx.save(); hx.beginPath(); hx.rect(cx-tw/2,y0,tw,56); hx.clip();
   for(var d=Math.round(deg)-half; d<=Math.round(deg)+half; d++){
     var nd=((d%360)+360)%360;
     var xo=(d-deg)*tpx, x=cx+xo;
-    var dist=Math.abs(xo)/(tw/2);
-    var al=Math.max(0,1-dist*1.2);
+    var dist=Math.abs(xo)/(tw/2), al=Math.max(0,1-dist*1.2);
     if(al<0.02) continue;
-
     var isC=nd%90===0, isM=nd%45===0, is15=nd%15===0;
     var th=isC?22:isM?15:is15?9:4;
     hx.strokeStyle=isC?`rgba(255,255,255,${al})`:isM?`rgba(255,45,155,${al})`:`rgba(255,45,155,${al*0.28})`;
     hx.lineWidth=isC?2.5:isM?1.5:0.7;
     hx.beginPath(); hx.moveTo(x,y0+4); hx.lineTo(x,y0+4+th); hx.stroke();
-
     if(isC){
       var cl={0:'N',90:'E',180:'S',270:'W'};
       hx.fillStyle=`rgba(255,255,255,${al})`;
@@ -360,14 +588,10 @@ function drawCompass(){
     }
   }
   hx.restore();
-
-  // Fade laterale
   var fg=hx.createLinearGradient(cx-tw/2,0,cx+tw/2,0);
   fg.addColorStop(0,'rgba(0,0,0,1)'); fg.addColorStop(0.07,'rgba(0,0,0,0)');
   fg.addColorStop(0.93,'rgba(0,0,0,0)'); fg.addColorStop(1,'rgba(0,0,0,1)');
   hx.fillStyle=fg; hx.fillRect(cx-tw/2,y0,tw,56);
-
-  // Riquadro heading centrale  |  E 090  |
   var d360=((Math.round(deg)%360)+360)%360;
   var ca=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   var ci=Math.round(d360/22.5)%16;
@@ -379,19 +603,15 @@ function drawCompass(){
   hx.font=`bold 13px "Courier New"`;
   hx.textAlign='center'; hx.textBaseline='middle';
   hx.fillText(hs,cx,by+bh/2); hx.textBaseline='alphabetic';
-
-  // Barre verticali ai lati  |
   hx.strokeStyle='rgba(255,45,155,0.55)'; hx.lineWidth=1.5;
   hx.beginPath(); hx.moveTo(bx-3,by); hx.lineTo(bx-3,by+bh); hx.stroke();
   hx.beginPath(); hx.moveTo(bx+bw+3,by); hx.lineTo(bx+bw+3,by+bh); hx.stroke();
-
-  // Triangolo ▼
   hx.fillStyle='#ff2d9b';
   hx.beginPath(); hx.moveTo(cx-5,y0); hx.lineTo(cx+5,y0); hx.lineTo(cx,y0+8); hx.closePath(); hx.fill();
 }
 
 // ─────────────────────────────────────────────
-// TIMER  (pillola bianca top-left)
+// TIMER
 // ─────────────────────────────────────────────
 function drawTimer(){
   var tx=88,ty=40,tw=106,th=34,r=17;
@@ -415,7 +635,7 @@ function pill(x,y,w,h,r){
 }
 
 // ─────────────────────────────────────────────
-// HP BAR  (bottom-left)
+// HP BAR
 // ─────────────────────────────────────────────
 function drawHP(){
   var x=50,y=HH-50,bw=200,bh=10;
@@ -425,175 +645,6 @@ function drawHP(){
   hx.fillStyle='rgba(255,45,155,0.75)';
   hx.font=`bold 10px "Courier New"`; hx.textAlign='left';
   hx.fillText('A1  ROBOLUCA#8035',x,y+bh+13);
-}
-
-// ─────────────────────────────────────────────
-// BORDI MAGENTA  (visibili solo HUD attivo)
-// ─────────────────────────────────────────────
-function drawBorders(p){
-  // p = 1 al momento dell'attivazione, scende a 0
-  var intensity=Math.min(1, p*1.1);
-
-  [0,1].forEach(function(side){
-    var bw=200;
-    var x0=side===0?0:HW-bw;
-
-    // Gradiente magenta dal bordo verso centro
-    var gr=hx.createLinearGradient(x0,0,x0+bw,0);
-    if(side===0){
-      gr.addColorStop(0,   `rgba(255,20,140,${0.60*intensity})`);
-      gr.addColorStop(0.4, `rgba(255,20,140,${0.28*intensity})`);
-      gr.addColorStop(0.8, `rgba(255,20,140,${0.08*intensity})`);
-      gr.addColorStop(1,   'rgba(255,20,140,0)');
-    } else {
-      gr.addColorStop(0,   'rgba(255,20,140,0)');
-      gr.addColorStop(0.2, `rgba(255,20,140,${0.08*intensity})`);
-      gr.addColorStop(0.6, `rgba(255,20,140,${0.28*intensity})`);
-      gr.addColorStop(1,   `rgba(255,20,140,${0.60*intensity})`);
-    }
-    hx.fillStyle=gr; hx.fillRect(x0,0,bw,HH);
-
-    // Pixel blocks casuali sovrapposti
-    PIX.forEach(function(px){
-      if((px.side==='L')!==(side===0)) return;
-      var px2=side===0?px.x:HW-px.x-px.w;
-      hx.fillStyle=`rgba(255,20,140,${px.a*intensity*0.85})`;
-      hx.fillRect(px2,px.y,px.w,px.h);
-    });
-
-    // Linea verticale esterna netta
-    hx.fillStyle=`rgba(255,45,155,${0.85*intensity})`;
-    hx.fillRect(side===0?0:HW-3,0,3,HH);
-
-    // Grande croce pixelata
-    var cxP=side===0?155:HW-155;
-    drawBigCross(cxP, HH*0.44, intensity);
-
-    // Cornice tratteggiata
-    var fx=side===0?28:HW-198, fy=75, fw=170, fh=HH-150;
-    hx.strokeStyle=`rgba(255,45,155,${0.38*intensity})`;
-    hx.lineWidth=1.5; hx.setLineDash([7,5]);
-    hx.strokeRect(fx,fy,fw,fh); hx.setLineDash([]);
-
-    // Quadratini agli angoli cornice
-    hx.fillStyle=`rgba(255,45,155,${0.7*intensity})`;
-    [[fx,fy],[fx+fw,fy],[fx,fy+fh],[fx+fw,fy+fh]].forEach(function(c){
-      hx.fillRect(c[0]-3,c[1]-3,6,6);
-    });
-
-    // Piccole croci (+) sparse
-    var sc=side===0?[[75,155],[110,310],[55,425],[165,375]]:
-                    [[HW-75,155],[HW-110,310],[HW-55,425],[HW-165,375]];
-    sc.forEach(function(c){ miniCross(c[0],c[1],intensity); });
-  });
-}
-
-function drawBigCross(cx,cy,a){
-  var c1=`rgba(255,20,140,${0.9*a})`;
-  var c2=`rgba(255,80,180,${0.55*a})`;
-  var c3=`rgba(210,0,130,${0.5*a})`;
-  hx.fillStyle=c1; hx.fillRect(cx-13,cy-72,26,144);
-  hx.fillStyle=c1; hx.fillRect(cx-72,cy-13,144,26);
-  hx.fillStyle=c2; hx.fillRect(cx-20,cy-20,40,40);
-  hx.fillStyle=c3; hx.fillRect(cx-8, cy-8, 16,16);
-  // estensioni pixel
-  hx.fillStyle=c2;
-  hx.fillRect(cx-13,cy-84,9,13); hx.fillRect(cx+4,cy-84,9,13);
-  hx.fillRect(cx-13,cy+71,9,13); hx.fillRect(cx+4,cy+71,9,13);
-  hx.fillRect(cx-85,cy-13,13,9); hx.fillRect(cx-85,cy+4,13,9);
-  hx.fillRect(cx+72,cy-13,13,9); hx.fillRect(cx+72,cy+4,13,9);
-  // highlight
-  hx.fillStyle=`rgba(255,180,230,${0.35*a})`;
-  hx.fillRect(cx-4,cy-4,8,8);
-}
-
-function miniCross(cx,cy,a){
-  hx.strokeStyle=`rgba(255,45,155,${0.38*a})`;
-  hx.lineWidth=1.5;
-  hx.beginPath(); hx.moveTo(cx-8,cy); hx.lineTo(cx+8,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx,cy-8); hx.lineTo(cx,cy+8); hx.stroke();
-}
-
-// ─────────────────────────────────────────────
-// BARRE ABILITÀ  (centre-top, con countdown)
-// ─────────────────────────────────────────────
-function drawAbilityBars(p){
-  var cx=HW/2, y=148;
-  var sw=24,sh=18,sg=3;
-  var filled=Math.ceil(p*SEGS);
-
-  // Linea superiore con angolino
-  var lext=SEGS*(sw+sg)+30;
-  hx.strokeStyle='rgba(255,45,155,0.45)'; hx.lineWidth=1;
-  hx.beginPath(); hx.moveTo(cx-lext,y-5); hx.lineTo(cx+lext,y-5); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+lext-20,y-5); hx.lineTo(cx+lext,y-5);
-  hx.lineTo(cx+lext,y+sh+5); hx.stroke();
-
-  // Barra sinistra
-  for(var i=0;i<SEGS;i++){
-    var sx=cx-24-(i+1)*(sw+sg);
-    var on=(SEGS-i)<=filled;
-    hx.beginPath();
-    hx.moveTo(sx+4,y); hx.lineTo(sx+sw,y); hx.lineTo(sx+sw-4,y+sh); hx.lineTo(sx,y+sh); hx.closePath();
-    hx.fillStyle=on?'#ffe000':'rgba(255,220,0,0.1)'; hx.fill();
-    if(!on){ hx.strokeStyle='rgba(255,220,0,0.22)'; hx.lineWidth=1; hx.stroke(); }
-  }
-
-  // Barra destra (speculare)
-  for(var j=0;j<SEGS;j++){
-    var sx2=cx+24+j*(sw+sg);
-    var on2=(j+1)<=filled;
-    hx.beginPath();
-    hx.moveTo(sx2,y); hx.lineTo(sx2+sw-4,y); hx.lineTo(sx2+sw,y+sh); hx.lineTo(sx2+4,y+sh); hx.closePath();
-    hx.fillStyle=on2?'#ffe000':'rgba(255,220,0,0.1)'; hx.fill();
-    if(!on2){ hx.strokeStyle='rgba(255,220,0,0.22)'; hx.lineWidth=1; hx.stroke(); }
-  }
-
-  // Numero countdown al centro
-  var sec=Math.ceil(S.remain);
-  hx.fillStyle='rgba(255,255,255,0.92)';
-  hx.font=`bold 22px "Courier New"`;
-  hx.textAlign='center'; hx.textBaseline='middle';
-  hx.fillText(String(sec).padStart(2,'0'),cx,y+sh/2);
-  hx.textBaseline='alphabetic';
-
-  // Dot separatori
-  hx.fillStyle='rgba(255,45,155,0.7)';
-  hx.beginPath(); hx.arc(cx-22,y+sh/2,3,0,Math.PI*2); hx.fill();
-  hx.beginPath(); hx.arc(cx+22,y+sh/2,3,0,Math.PI*2); hx.fill();
-}
-
-// ─────────────────────────────────────────────
-// 4 CERCHI ABILITÀ
-// ─────────────────────────────────────────────
-function drawCircles(){
-  var cx=HW/2, yc=185, r=27;
-  var pos=[[cx-108,yc],[cx-56,yc],[cx+56,yc],[cx+108,yc]];
-  var icons=['←','←','→','→'];
-  pos.forEach(function(p,i){
-    hx.beginPath(); hx.arc(p[0],p[1],r,0,Math.PI*2);
-    hx.fillStyle='rgba(0,0,0,0.35)'; hx.fill();
-    hx.strokeStyle='rgba(255,45,155,0.85)'; hx.lineWidth=2;
-    hx.beginPath(); hx.arc(p[0],p[1],r,0,Math.PI*2); hx.stroke();
-    hx.fillStyle='rgba(255,45,155,0.9)';
-    hx.font=`16px "Courier New"`;
-    hx.textAlign='center'; hx.textBaseline='middle';
-    hx.fillText(icons[i],p[0],p[1]); hx.textBaseline='alphabetic';
-  });
-}
-
-// ─────────────────────────────────────────────
-// CROSSHAIR
-// ─────────────────────────────────────────────
-function drawCross(){
-  var cx=HW/2, cy=HH/2+28, g=5, l=12;
-  hx.strokeStyle='rgba(255,45,155,0.7)'; hx.lineWidth=1.5; hx.lineCap='round';
-  hx.beginPath(); hx.moveTo(cx,cy-g-l); hx.lineTo(cx,cy-g); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx,cy+g);   hx.lineTo(cx,cy+g+l); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx-g-l,cy); hx.lineTo(cx-g,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+g,cy);   hx.lineTo(cx+g+l,cy); hx.stroke();
-  hx.fillStyle='rgba(255,45,155,0.5)';
-  hx.beginPath(); hx.arc(cx,cy,2,0,Math.PI*2); hx.fill();
 }
 </script>
 </body>
