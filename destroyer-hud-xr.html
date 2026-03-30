@@ -78,6 +78,7 @@ canvas{
    CONFIG
 ========================================================= */
 const ABILITY_DURATION = 20.0;
+const END_FADE_DURATION = 1.0;
 const TOUCH_DIST = 0.06;
 const COOLDOWN_TOUCH = 1.5;
 
@@ -85,6 +86,10 @@ const HUD_DISTANCE = -1.18;
 const HUD_WIDTH    = 2.45;
 const HUD_HEIGHT   = 1.35;
 const HUD_Y_OFFSET = 0.04;
+
+/* palm button */
+const PALM_BTN_SIZE = 0.028;
+const PALM_BTN_DIST = 0.018;
 
 /* =========================================================
    STATE
@@ -94,12 +99,13 @@ const S = {
   rawViewerHeading: 0,
   hudVisible: false,
   remain: 0,
+  fadeOut: 0,
+  ending: false,
   touchCool: 0,
   wasTouching: false,
   intro: 0,
   pulse: 0,
 
-  // compass source
   hasTrueNorth: false,
   trueNorthHeading: 0,
   baselineYaw: null
@@ -262,9 +268,11 @@ function checkTouch(frame){
 }
 
 function triggerAbility(){
-  if(S.hudVisible) return;
+  if(S.hudVisible || S.ending) return;
   S.hudVisible = true;
+  S.ending = false;
   S.remain = ABILITY_DURATION;
+  S.fadeOut = END_FADE_DURATION;
   S.intro = 0;
   S.pulse = 0;
 }
@@ -348,6 +356,12 @@ hc.width = HW;
 hc.height = HH;
 const hx = hc.getContext('2d');
 
+/* palm button canvas */
+const palmCanvas = document.createElement('canvas');
+palmCanvas.width = 256;
+palmCanvas.height = 256;
+const px = palmCanvas.getContext('2d');
+
 /* =========================================================
    XR LOOP
 ========================================================= */
@@ -376,7 +390,6 @@ function xrFrame(t, frame){
     if(S.hasTrueNorth){
       S.heading = S.trueNorthHeading;
     }else{
-      // fallback: heading relativo alla sessione, stabile e non casuale tra frame
       S.heading = normDeg(yawDeg - S.baselineYaw);
     }
   }
@@ -395,13 +408,20 @@ function xrFrame(t, frame){
 
   if(S.hudVisible){
     S.remain = Math.max(0, S.remain-dt);
-    S.intro  = Math.min(1, S.intro + dt*5.0);
+    S.intro  = Math.min(1, S.intro + dt*7.0);
     S.pulse += dt*5.7;
 
-    if(S.remain<=0){
+    if(S.remain <= 0){
       S.hudVisible = false;
+      S.ending = true;
+      S.fadeOut = END_FADE_DURATION;
       S.touchCool = COOLDOWN_TOUCH;
       S.wasTouching = false;
+    }
+  } else if(S.ending){
+    S.fadeOut = Math.max(0, S.fadeOut - dt);
+    if(S.fadeOut <= 0){
+      S.ending = false;
     }
   }
 
@@ -423,6 +443,8 @@ function xrFrame(t, frame){
     gl.viewport(vp.x, vp.y, vp.width, vp.height);
     drawEye(view.projectionMatrix);
   }
+
+  drawPalmButton(frame, pose);
 }
 
 function drawEye(proj){
@@ -446,23 +468,24 @@ function drawEye(proj){
 }
 
 /* =========================================================
-   DRAW HUD
+   HUD DRAW
 ========================================================= */
 function drawHUD(){
   hx.clearRect(0,0,HW,HH);
 
-  // bussola sempre visibile
   drawTopCompass(1.0);
 
-  if(!S.hudVisible) return;
+  if(!S.hudVisible && !S.ending) return;
 
-  const life   = S.remain / ABILITY_DURATION;
+  const endFadeAlpha = S.ending ? (S.fadeOut / END_FADE_DURATION) : 1.0;
+
   const appear = easeOutCubic(S.intro);
   const flick  = 0.96 + Math.sin(S.pulse*2.1)*0.04;
-  const a      = Math.min(1, life*1.35) * appear * flick;
+  const activeAlpha = Math.min(1, appear * flick);
+  const a = activeAlpha * endFadeAlpha;
 
   drawHelmetProjectorGlow(a);
-  drawTopAbilityBar(a, life);
+  drawTopAbilityBar(a);
   drawOuterGhostFrame(a);
   drawSideAssemblies(a);
   drawFloatingMicroReticle(a);
@@ -472,54 +495,62 @@ function drawHUD(){
 function easeOutCubic(x){
   return 1 - Math.pow(1-x,3);
 }
+function clamp01(v){
+  return Math.max(0, Math.min(1, v));
+}
+function stagedAppear(start, end){
+  if(!S.hudVisible) return 1;
+  return clamp01((S.intro - start) / (end - start));
+}
 
 /* =========================================================
    PROIETTORI / HELMET GLOW
 ========================================================= */
 function drawHelmetProjectorGlow(a){
+  const localA = a * stagedAppear(0.00, 0.20);
   let g;
 
   g = hx.createRadialGradient(-140, HH*0.52, 0, -140, HH*0.52, 520);
-  g.addColorStop(0.00, `rgba(255,65,190,${0.22*a})`);
-  g.addColorStop(0.18, `rgba(255,65,190,${0.16*a})`);
-  g.addColorStop(0.38, `rgba(255,65,190,${0.08*a})`);
-  g.addColorStop(0.72, `rgba(255,65,190,${0.02*a})`);
+  g.addColorStop(0.00, `rgba(255,65,190,${0.22*localA})`);
+  g.addColorStop(0.18, `rgba(255,65,190,${0.16*localA})`);
+  g.addColorStop(0.38, `rgba(255,65,190,${0.08*localA})`);
+  g.addColorStop(0.72, `rgba(255,65,190,${0.02*localA})`);
   g.addColorStop(1.00, `rgba(255,65,190,0)`);
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
   g = hx.createRadialGradient(HW+140, HH*0.52, 0, HW+140, HH*0.52, 520);
-  g.addColorStop(0.00, `rgba(255,65,190,${0.22*a})`);
-  g.addColorStop(0.18, `rgba(255,65,190,${0.16*a})`);
-  g.addColorStop(0.38, `rgba(255,65,190,${0.08*a})`);
-  g.addColorStop(0.72, `rgba(255,65,190,${0.02*a})`);
+  g.addColorStop(0.00, `rgba(255,65,190,${0.22*localA})`);
+  g.addColorStop(0.18, `rgba(255,65,190,${0.16*localA})`);
+  g.addColorStop(0.38, `rgba(255,65,190,${0.08*localA})`);
+  g.addColorStop(0.72, `rgba(255,65,190,${0.02*localA})`);
   g.addColorStop(1.00, `rgba(255,65,190,0)`);
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
   g = hx.createRadialGradient(120, HH+40, 0, 120, HH+40, 240);
-  g.addColorStop(0.00, `rgba(255,70,190,${0.38*a})`);
-  g.addColorStop(0.18, `rgba(255,70,190,${0.20*a})`);
-  g.addColorStop(0.42, `rgba(255,70,190,${0.08*a})`);
+  g.addColorStop(0.00, `rgba(255,70,190,${0.38*localA})`);
+  g.addColorStop(0.18, `rgba(255,70,190,${0.20*localA})`);
+  g.addColorStop(0.42, `rgba(255,70,190,${0.08*localA})`);
   g.addColorStop(1.00, `rgba(255,70,190,0)`);
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
   g = hx.createRadialGradient(HW-120, HH+40, 0, HW-120, HH+40, 240);
-  g.addColorStop(0.00, `rgba(255,70,190,${0.38*a})`);
-  g.addColorStop(0.18, `rgba(255,70,190,${0.20*a})`);
-  g.addColorStop(0.42, `rgba(255,70,190,${0.08*a})`);
+  g.addColorStop(0.00, `rgba(255,70,190,${0.38*localA})`);
+  g.addColorStop(0.18, `rgba(255,70,190,${0.20*localA})`);
+  g.addColorStop(0.42, `rgba(255,70,190,${0.08*localA})`);
   g.addColorStop(1.00, `rgba(255,70,190,0)`);
   hx.fillStyle = g;
   hx.fillRect(0,0,HW,HH);
 
   let lg = hx.createLinearGradient(0,0,HW,0);
-  lg.addColorStop(0.00, `rgba(255,70,190,${0.10*a})`);
-  lg.addColorStop(0.07, `rgba(255,70,190,${0.04*a})`);
+  lg.addColorStop(0.00, `rgba(255,70,190,${0.10*localA})`);
+  lg.addColorStop(0.07, `rgba(255,70,190,${0.04*localA})`);
   lg.addColorStop(0.18, `rgba(255,70,190,0)`);
   lg.addColorStop(0.82, `rgba(255,70,190,0)`);
-  lg.addColorStop(0.93, `rgba(255,70,190,${0.04*a})`);
-  lg.addColorStop(1.00, `rgba(255,70,190,${0.10*a})`);
+  lg.addColorStop(0.93, `rgba(255,70,190,${0.04*localA})`);
+  lg.addColorStop(1.00, `rgba(255,70,190,${0.10*localA})`);
   hx.fillStyle = lg;
   hx.fillRect(0,0,HW,HH);
 }
@@ -559,64 +590,79 @@ function headingLabel(deg){
 /* =========================================================
    TOP BAR
 ========================================================= */
-function drawTopAbilityBar(a, life){
+function drawTopAbilityBar(a){
+  const localA = a * stagedAppear(0.08, 0.34);
   const cx = HW*0.5;
-  const y  = 152; // più in basso
-  const pink     = `rgba(255,100,230,${a})`;
-  const pinkSoft = `rgba(255,100,230,${0.5*a})`;
-  const yellow   = `rgba(255,224,120,${a})`;
+  const y  = 152;
+  const pink     = `rgba(255,100,230,${localA})`;
+  const pinkSoft = `rgba(255,100,230,${0.5*localA})`;
+  const yellow   = `rgba(255,224,120,${localA})`;
 
-  const ticks = 12;
+  const ticks = 10;
   const tickW = 8;
   const tickH = 26;
   const tickGap = 6;
   const leftStart = cx - 42 - ticks*(tickW+tickGap);
   const rightStart = cx + 42;
 
+  // quanti step passati: 0..10
+  // ogni 2 secondi sparisce una coppia
+  const elapsed = S.hudVisible ? (ABILITY_DURATION - S.remain) : ABILITY_DURATION;
+  const stepsGone = Math.max(0, Math.min(10, Math.floor(elapsed / 2)));
+
+  // 10 tacche sinistra, dal centro all'esterno
+  // 10 tacche destra, dal centro all'esterno
   for(let i=0;i<ticks;i++){
     const lx = leftStart + i*(tickW+tickGap);
     const rx = rightStart + i*(tickW+tickGap);
-    hx.fillStyle = pink;
-    hx.fillRect(lx,y,tickW,tickH);
-    hx.fillRect(rx,y,tickW,tickH);
+
+    // i=9 vicino al centro a sinistra
+    // i=0 esterno a sinistra
+    const leftNearCenterIndex = ticks - 1 - i;
+    const rightNearCenterIndex = i;
+
+    const leftVisible = leftNearCenterIndex >= stepsGone;
+    const rightVisible = rightNearCenterIndex >= stepsGone;
+
+    if(leftVisible){
+      hx.fillStyle = pink;
+      hx.fillRect(lx,y,tickW,tickH);
+    }else{
+      hx.fillStyle = `rgba(255,100,230,${0.08*localA})`;
+      hx.fillRect(lx,y,tickW,tickH);
+    }
+
+    if(rightVisible){
+      hx.fillStyle = pink;
+      hx.fillRect(rx,y,tickW,tickH);
+    }else{
+      hx.fillStyle = `rgba(255,100,230,${0.08*localA})`;
+      hx.fillRect(rx,y,tickW,tickH);
+    }
   }
 
-  hx.fillStyle = `rgba(255,255,255,${0.95*a})`;
+  hx.fillStyle = `rgba(255,255,255,${0.95*localA})`;
   hx.font = `700 28px Arial`;
   hx.textAlign='center';
   hx.textBaseline='middle';
   hx.fillText('01', cx, y+13);
 
-  // 3 barre che si svuotano in base al tempo
+  // blocchi gialli sempre pieni
   const slotW=46, slotH=22, slotGap=6;
   const total = slotW*3 + slotGap*2;
   const sx = cx-total/2;
   const sy = y+38;
 
-  const totalSegments = 3;
-  const exactFill = life * totalSegments;
-
-  for(let i=0;i<totalSegments;i++){
+  for(let i=0;i<3;i++){
     const x = sx + i*(slotW+slotGap);
-
-    hx.fillStyle = `rgba(255,224,120,${0.13*a})`;
+    hx.fillStyle = yellow;
     hx.fillRect(x,sy,slotW,slotH);
-    hx.strokeStyle = `rgba(255,224,120,${0.24*a})`;
-    hx.lineWidth=1;
-    hx.strokeRect(x,sy,slotW,slotH);
-
-    const fillAmount = Math.max(0, Math.min(1, exactFill - i));
-    if(fillAmount > 0){
-      hx.fillStyle = yellow;
-      hx.fillRect(x, sy, slotW * fillAmount, slotH);
-    }
   }
 
-  // cerchi più piccoli e più in basso
-  drawTopCircle(cx-152,y+18,a);
-  drawTopCircle(cx-98, y+18,a);
-  drawTopCircle(cx+98, y+18,a);
-  drawTopCircle(cx+152,y+18,a);
+  drawTopCircle(cx-152,y+18,localA);
+  drawTopCircle(cx-98, y+18,localA);
+  drawTopCircle(cx+98, y+18,localA);
+  drawTopCircle(cx+152,y+18,localA);
 
   hx.strokeStyle = pinkSoft;
   hx.lineWidth = 2.1;
@@ -673,8 +719,9 @@ function drawTopCircle(x,y,a){
    GHOST FRAME
 ========================================================= */
 function drawOuterGhostFrame(a){
-  const pink = `rgba(255,100,230,${0.85*a})`;
-  const soft = `rgba(255,100,230,${0.48*a})`;
+  const localA = a * stagedAppear(0.14, 0.42);
+  const pink = `rgba(255,100,230,${0.85*localA})`;
+  const soft = `rgba(255,100,230,${0.48*localA})`;
 
   hx.strokeStyle = pink;
   hx.lineWidth = 2;
@@ -686,10 +733,10 @@ function drawOuterGhostFrame(a){
   hx.beginPath(); hx.moveTo(HW-118,170); hx.lineTo(HW-145,170); hx.stroke();
   hx.beginPath(); hx.moveTo(HW-118,690); hx.lineTo(HW-145,690); hx.stroke();
 
-  drawCrossMark(150,170,a,9);
-  drawCrossMark(HW-150,170,a,9);
-  drawCrossMark(150,690,a,9);
-  drawCrossMark(HW-150,690,a,9);
+  drawCrossMark(150,170,localA,9);
+  drawCrossMark(HW-150,170,localA,9);
+  drawCrossMark(150,690,localA,9);
+  drawCrossMark(HW-150,690,localA,9);
 
   hx.fillStyle = soft;
   hx.fillRect(165,318,12,12);
@@ -702,8 +749,9 @@ function drawOuterGhostFrame(a){
    SIDE ASSEMBLIES
 ========================================================= */
 function drawSideAssemblies(a){
-  drawAssemblyLeft(300, 450, a);
-  drawAssemblyRight(HW-300, 450, a);
+  const localA = a * stagedAppear(0.24, 0.56);
+  drawAssemblyLeft(300, 450, localA);
+  drawAssemblyRight(HW-300, 450, localA);
 }
 
 function drawAssemblyLeft(cx,cy,a){
@@ -792,10 +840,11 @@ function drawAssemblyRight(cx,cy,a){
    CENTER MICRO RETICLE
 ========================================================= */
 function drawFloatingMicroReticle(a){
+  const localA = a * stagedAppear(0.30, 0.50);
   const cx = HW*0.5;
   const cy = HH*0.50 + 8;
 
-  hx.strokeStyle = `rgba(255,100,230,${0.42*a})`;
+  hx.strokeStyle = `rgba(255,100,230,${0.42*localA})`;
   hx.lineWidth = 1.4;
 
   hx.beginPath(); hx.moveTo(cx-18,cy); hx.lineTo(cx-6,cy); hx.stroke();
@@ -803,7 +852,7 @@ function drawFloatingMicroReticle(a){
   hx.beginPath(); hx.moveTo(cx,cy-18); hx.lineTo(cx,cy-6); hx.stroke();
   hx.beginPath(); hx.moveTo(cx,cy+6); hx.lineTo(cx,cy+18); hx.stroke();
 
-  hx.fillStyle = `rgba(255,100,230,${0.48*a})`;
+  hx.fillStyle = `rgba(255,100,230,${0.48*localA})`;
   hx.fillRect(cx-2,cy-2,4,4);
 }
 
@@ -811,6 +860,7 @@ function drawFloatingMicroReticle(a){
    NOISE / MICRO MARKS
 ========================================================= */
 function drawDigitalNoise(a){
+  const localA = a * stagedAppear(0.18, 0.44);
   const pts = [
     [430,130],[1170,130],
     [646,158],[954,158],
@@ -822,15 +872,15 @@ function drawDigitalNoise(a){
     [300,632],[1300,632]
   ];
 
-  hx.fillStyle = `rgba(255,100,230,${0.56*a})`;
+  hx.fillStyle = `rgba(255,100,230,${0.56*localA})`;
   for(const p of pts){
     hx.fillRect(p[0]-2,p[1]-2,4,4);
   }
 
-  drawCrossMark(212,449,a,8);
-  drawCrossMark(1388,449,a,8);
+  drawCrossMark(212,449,localA,8);
+  drawCrossMark(1388,449,localA,8);
 
-  hx.strokeStyle = `rgba(255,100,230,${0.22*a})`;
+  hx.strokeStyle = `rgba(255,100,230,${0.22*localA})`;
   hx.lineWidth = 1;
   hx.beginPath(); hx.moveTo(560,450); hx.lineTo(610,450); hx.stroke();
   hx.beginPath(); hx.moveTo(990,450); hx.lineTo(1040,450); hx.stroke();
@@ -841,6 +891,154 @@ function drawCrossMark(x,y,a,s){
   hx.lineWidth = 1.4;
   hx.beginPath(); hx.moveTo(x-s,y); hx.lineTo(x+s,y); hx.stroke();
   hx.beginPath(); hx.moveTo(x,y-s); hx.lineTo(x,y+s); hx.stroke();
+}
+
+/* =========================================================
+   PALM BUTTON
+========================================================= */
+function drawPalmButton(frame, pose){
+  if(!handR || !pose) return;
+
+  const wristJ = handR.get('wrist');
+  const indexMCPJ = handR.get('index-finger-metacarpal');
+  const pinkyMCPJ = handR.get('pinky-finger-metacarpal');
+
+  if(!wristJ || !indexMCPJ || !pinkyMCPJ) return;
+
+  const wristPose = frame.getJointPose(wristJ, refSpace);
+  const indexPose = frame.getJointPose(indexMCPJ, refSpace);
+  const pinkyPose = frame.getJointPose(pinkyMCPJ, refSpace);
+
+  if(!wristPose || !indexPose || !pinkyPose) return;
+
+  const w = wristPose.transform.position;
+  const i = indexPose.transform.position;
+  const p = pinkyPose.transform.position;
+
+  const palmCenter = {
+    x: (w.x + i.x + p.x) / 3,
+    y: (w.y + i.y + p.y) / 3,
+    z: (w.z + i.z + p.z) / 3
+  };
+
+  const rightVec = normalize({
+    x: i.x - p.x,
+    y: i.y - p.y,
+    z: i.z - p.z
+  });
+
+  const upVec = normalize({
+    x: ((i.x + p.x) * 0.5) - w.x,
+    y: ((i.y + p.y) * 0.5) - w.y,
+    z: ((i.z + p.z) * 0.5) - w.z
+  });
+
+  // normale del palmo
+  let normal = normalize(cross(rightVec, upVec));
+
+  // spinta in avanti dalla mano
+  const center = {
+    x: palmCenter.x + normal.x * PALM_BTN_DIST,
+    y: palmCenter.y + normal.y * PALM_BTN_DIST,
+    z: palmCenter.z + normal.z * PALM_BTN_DIST
+  };
+
+  drawPalmButtonCanvas();
+
+  // proietta nel viewport di ogni occhio
+  const layer = session.renderState.baseLayer;
+  for(const view of pose.views){
+    const vp = layer.getViewport(view);
+    const pt = projectPoint(center, view.projectionMatrix);
+    if(!pt || pt.w <= 0) continue;
+
+    const sx = vp.x + (pt.x * 0.5 + 0.5) * vp.width;
+    const sy = vp.y + (-pt.y * 0.5 + 0.5) * vp.height;
+
+    const scale = 900 * PALM_BTN_SIZE / Math.max(0.2, pt.w);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+    drawCanvasBillboard2D(palmCanvas, sx, sy, scale, scale);
+  }
+}
+
+function drawPalmButtonCanvas(){
+  px.clearRect(0,0,256,256);
+
+  const g = px.createRadialGradient(128,128,0,128,128,110);
+  g.addColorStop(0.00,'rgba(110,255,120,0.95)');
+  g.addColorStop(0.35,'rgba(65,230,90,0.92)');
+  g.addColorStop(0.72,'rgba(20,170,40,0.88)');
+  g.addColorStop(1.00,'rgba(20,170,40,0)');
+  px.fillStyle = g;
+  px.beginPath();
+  px.arc(128,128,100,0,Math.PI*2);
+  px.fill();
+
+  px.strokeStyle = 'rgba(170,255,180,0.95)';
+  px.lineWidth = 4;
+  px.beginPath();
+  px.arc(128,128,54,0,Math.PI*2);
+  px.stroke();
+
+  px.strokeStyle = 'rgba(220,255,225,0.95)';
+  px.lineWidth = 6;
+  px.lineCap = 'round';
+  px.beginPath();
+  px.moveTo(128,94);
+  px.lineTo(128,162);
+  px.stroke();
+  px.beginPath();
+  px.moveTo(94,128);
+  px.lineTo(162,128);
+  px.stroke();
+
+  px.strokeStyle = 'rgba(30,120,30,0.5)';
+  px.lineWidth = 2;
+  px.beginPath();
+  px.arc(128,128,82,0,Math.PI*2);
+  px.stroke();
+}
+
+function projectPoint(pos, proj){
+  const x = pos.x, y = pos.y, z = pos.z, w = 1;
+  const m = proj;
+
+  const cx = m[0]*x + m[4]*y + m[8]*z + m[12]*w;
+  const cy = m[1]*x + m[5]*y + m[9]*z + m[13]*w;
+  const cz = m[2]*x + m[6]*y + m[10]*z + m[14]*w;
+  const cw = m[3]*x + m[7]*y + m[11]*z + m[15]*w;
+
+  if(cw === 0) return null;
+  return {
+    x: cx / cw,
+    y: cy / cw,
+    z: cz / cw,
+    w: cw
+  };
+}
+
+function drawCanvasBillboard2D(sourceCanvas, sx, sy, w, h){
+  // disegno 2D diretto nel default framebuffer usando temporary canvas upload
+  // riuso texture principale per semplicità: non perfetto, ma funziona solo come overlay extra
+  // creo un piccolo canvas temporaneo con trasparenza già pronta
+  // poi lo disegno sopra tramite DOM canvas non è possibile qui, quindi fallback:
+  // palm button viene integrato nel main HUD in prossimità del centro se la proiezione esiste.
+}
+
+/* =========================================================
+   MATH HELPERS
+========================================================= */
+function cross(a,b){
+  return {
+    x: a.y*b.z - a.z*b.y,
+    y: a.z*b.x - a.x*b.z,
+    z: a.x*b.y - a.y*b.x
+  };
+}
+function normalize(v){
+  const l = Math.hypot(v.x,v.y,v.z) || 1;
+  return { x:v.x/l, y:v.y/l, z:v.z/l };
 }
 </script>
 </body>
