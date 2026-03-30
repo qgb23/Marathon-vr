@@ -7,475 +7,649 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
-  background:#000; color:#fff;
+  background:#111; color:#fff;
   font-family:'Courier New',monospace;
   display:flex; flex-direction:column;
   align-items:center; justify-content:center;
-  height:100vh; gap:14px; overflow:hidden;
+  height:100vh; gap:16px; overflow:hidden;
 }
 #logo { font-size:10px; letter-spacing:.3em; color:rgba(255,45,155,.5); text-transform:uppercase; }
 #start-btn {
   padding:16px 36px; font-size:17px; font-family:'Courier New',monospace;
   font-weight:700; letter-spacing:.2em; text-transform:uppercase;
   background:transparent; color:#ff2d9b; border:2px solid #ff2d9b;
-  border-radius:3px; cursor:pointer; transition:background .2s;
+  border-radius:3px; cursor:pointer;
 }
-#start-btn:hover { background:rgba(255,45,155,.15); }
-#info {
-  font-size:11px; color:rgba(255,255,255,.35);
-  letter-spacing:.1em; text-align:center;
-  max-width:320px; line-height:1.8;
-}
-#err { color:#ff6060; font-size:12px; display:none; text-align:center; max-width:320px; }
+#info { font-size:11px; color:rgba(255,255,255,.35); letter-spacing:.1em; text-align:center; max-width:340px; line-height:1.8; }
+#err  { color:#ff6060; font-size:12px; display:none; text-align:center; max-width:340px; }
 canvas { display:none; position:fixed; inset:0; width:100%; height:100%; }
 </style>
 </head>
 <body>
-
 <div id="logo">Marathon · Destroyer Shell</div>
 <button id="start-btn" onclick="startAR()">Enter AR</button>
 <div id="info">
-  WebXR immersive-ar · Quest 3<br>
-  Quad 3D a 1.8m dalla testa — ogni occhio<br>
-  riceve la proiezione corretta, nessun doppio.
+  WebXR immersive-ar · Quest 3 passthrough<br>
+  HUD head-locked — quad 3D proiettato per-eye<br>
+  Bussola in alto · Barre HP al centro · Abilità ai lati
 </div>
 <div id="err"></div>
 <canvas id="c"></canvas>
 
 <script>
-// ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
 // STATE
-// ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
 var state = {
-  compassDeg: 286,
+  // Bussola: heading in gradi (0=N, 90=E, 180=S, 270=W)
+  // La bussola mostra il CONTRARIO della rotazione testa:
+  // se guardo a E (90°), la bussola mostra E centrato.
+  heading: 286,
+
+  hp: 17, hpMax: 30,
+  shieldSegs: [true,true,false],   // X-shield slots
+  ammo: 14, ammoRes: 149,
   timerSec: 14*60+2,
+
+  // 4 abilità: 2 sinistra, 2 destra
   abilities: [
-    {name:'Search & Destroy', cd:0, maxCd:10},
-    {name:'Riot Barricade',   cd:0, maxCd:8},
-    {name:'Tactical Sprint',  cd:0, maxCd:12},
-    {name:'Thruster',         cd:0, maxCd:6},
+    {name:'Search & Destroy', cd:0, maxCd:10, icon:'◆'},
+    {name:'Riot Barricade',   cd:0, maxCd:8,  icon:'⬡'},
+    {name:'Tactical Sprint',  cd:0, maxCd:12, icon:'▲'},
+    {name:'Thruster',         cd:0, maxCd:6,  icon:'↑'},
   ],
   notify:{text:'', alpha:0, timer:0},
 };
 
-// ─────────────────────────────────────────────────────────
-// WebXR
-// ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// WebXR SETUP
+// ═══════════════════════════════════════════════════════════
 var session, gl, refSpace;
 var canvas = document.getElementById('c');
 
 async function startAR() {
-  document.getElementById('err').style.display = 'none';
-  if (!navigator.xr) return showErr('WebXR non disponibile.');
+  document.getElementById('err').style.display='none';
+  if (!navigator.xr) return showErr('WebXR non disponibile. Usa Meta Browser su Quest 3.');
   var ok = await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
-  if (!ok) return showErr('immersive-ar non supportato. Usa Meta Browser su Quest 3.');
-
+  if (!ok) return showErr('immersive-ar non supportato su questo dispositivo/browser.');
   try {
-    session = await navigator.xr.requestSession('immersive-ar', {
-      requiredFeatures: ['local'],
-    });
-  } catch(e) { return showErr('Errore sessione: '+e.message); }
+    session = await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local']});
+  } catch(e){ return showErr('Errore sessione: '+e.message); }
 
-  ['start-btn','info','logo'].forEach(id => {
-    var el = document.getElementById(id);
-    if (el) el.style.display = 'none';
+  ['start-btn','info','logo'].forEach(id=>{
+    var el=document.getElementById(id); if(el) el.style.display='none';
   });
-  canvas.style.display = 'block';
+  canvas.style.display='block';
 
-  gl = canvas.getContext('webgl2', {xrCompatible:true, alpha:true, premultipliedAlpha:false})
-    || canvas.getContext('webgl',  {xrCompatible:true, alpha:true, premultipliedAlpha:false});
+  gl = canvas.getContext('webgl2',{xrCompatible:true,alpha:true,premultipliedAlpha:false})
+    || canvas.getContext('webgl', {xrCompatible:true,alpha:true,premultipliedAlpha:false});
 
   await session.updateRenderState({
     baseLayer: new XRWebGLLayer(session, gl, {alpha:true}),
   });
   refSpace = await session.requestReferenceSpace('local');
 
-  session.addEventListener('selectstart', e => {
-    activateAbility(e.inputSource.handedness === 'left' ? 0 : 2);
+  // DeviceOrientation → heading reale
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', function(e){
+      if (e.alpha !== null) {
+        // alpha = rotazione Z in gradi, 0=N, aumenta verso W
+        state.heading = ((360 - e.alpha) % 360 + 360) % 360;
+      }
+    });
+  }
+
+  session.addEventListener('selectstart', e=>{
+    activateAbility(e.inputSource.handedness==='left' ? 0 : 2);
   });
-  session.addEventListener('selectend', e => {
-    activateAbility(e.inputSource.handedness === 'left' ? 1 : 3);
+  session.addEventListener('selectend', e=>{
+    activateAbility(e.inputSource.handedness==='left' ? 1 : 3);
   });
 
-  setInterval(() => { state.timerSec = Math.max(0, state.timerSec - 1); }, 1000);
+  setInterval(()=>{ state.timerSec=Math.max(0,state.timerSec-1); }, 1000);
+  // Rotazione automatica lenta se nessun sensore
+  setInterval(()=>{ state.heading = (state.heading + 0.1) % 360; }, 50);
 
   initGL();
   session.requestAnimationFrame(onXRFrame);
 }
 
-function showErr(m) {
-  var e = document.getElementById('err');
-  e.textContent = m;
-  e.style.display = 'block';
+function showErr(m){ var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+function activateAbility(i){
+  var ab=state.abilities[i]; if(!ab||ab.cd>0) return;
+  ab.cd=ab.maxCd; pushNotify(ab.name+' — Active');
 }
-function activateAbility(i) {
-  var ab = state.abilities[i];
-  if (!ab || ab.cd > 0) return;
-  ab.cd = ab.maxCd;
-  pushNotify(ab.name + ' — Active');
-}
-function pushNotify(t) {
-  state.notify.text = t;
-  state.notify.alpha = 1;
-  state.notify.timer = 2;
-}
+function pushNotify(t){ state.notify.text=t; state.notify.alpha=1; state.notify.timer=2; }
 
-// ─────────────────────────────────────────────────────────
-// HUD CANVAS 2D  (512 × 128 — solo bussola + abilità compatte)
-// ─────────────────────────────────────────────────────────
-var HW = 512, HH = 128;
-var hc = document.createElement('canvas');
-hc.width = HW; hc.height = HH;
-var hx = hc.getContext('2d');
+// ═══════════════════════════════════════════════════════════
+// HUD CANVAS 2D
+// Risoluzione alta per nitidezza su Quest 3: 1024 × 512
+// Copre l'intera larghezza visiva (dai bordi mani al centro)
+// ═══════════════════════════════════════════════════════════
+var HW=1024, HH=512;
+var hc=document.createElement('canvas'); hc.width=HW; hc.height=HH;
+var hx=hc.getContext('2d');
 
-// ─────────────────────────────────────────────────────────
-// GLSL — vertex shader usa projection matrix per-eye
-// I vertici del quad sono definiti in view-space (camera-local):
-//   +X destra, +Y su, -Z avanti
-// Moltiplicando per la projection matrix si ottiene clip-space
-// corretto per quell'occhio → nessun doppio.
-// ─────────────────────────────────────────────────────────
-var VERT = `
+// ═══════════════════════════════════════════════════════════
+// WEBGL — vertex shader usa proiezione per-eye (view-space)
+// ═══════════════════════════════════════════════════════════
+var VERT=`
   precision highp float;
   attribute vec3 aPos;
   attribute vec2 aUV;
   uniform mat4 uProj;
   varying vec2 vUV;
   void main(){
-    // aPos già in view-space → solo projection
-    gl_Position = uProj * vec4(aPos, 1.0);
+    gl_Position = uProj * vec4(aPos,1.0);
     vUV = aUV;
   }
 `;
-var FRAG = `
+var FRAG=`
   precision mediump float;
   varying vec2 vUV;
   uniform sampler2D uTex;
   void main(){
-    vec4 c = texture2D(uTex, vUV);
-    // output pre-moltiplicato per blending corretto sul passthrough
-    gl_FragColor = vec4(c.rgb * c.a, c.a);
+    vec4 c = texture2D(uTex,vUV);
+    gl_FragColor = vec4(c.rgb*c.a, c.a);
   }
 `;
 
 var prog, vbo, tex;
 var locPos, locUV, locProj, locTex;
 
-// ── Dimensioni quad in view-space ──
-// 0.55 m largo × 0.14 m alto a 1.8 m → ~17° horiz, ~4.4° vert
-// Compatto, non invasivo, centrato leggermente in alto
-var QW   = 0.55;   // larghezza metri
-var QH   = 0.14;   // altezza metri
-var DIST = 1.8;    // distanza in avanti (Z negativo)
-var YOFF = 0.22;   // offset verso l'alto (0 = centro visivo)
+// ── Geometria quad in view-space ──────────────────────────
+// Larghezza: 1.8m a 1.5m di distanza → ~65° FOV (quasi full-width)
+// Questo copre la zona dalle mani al centro
+// Altezza: 0.9m → ~34° FOV verticale
+// Centro: leggermente in alto (YOFF = 0.12)
+var QW   = 1.80;   // larghezza in metri — copre le mani ai lati
+var QH   = 0.90;   // altezza in metri
+var DIST = 1.5;    // distanza avanti
+var YOFF = 0.10;   // offset verticale (positivo = su)
 
-function initGL() {
-  var vs = makeShader(gl.VERTEX_SHADER, VERT);
-  var fs = makeShader(gl.FRAGMENT_SHADER, FRAG);
-  prog = gl.createProgram();
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
+function initGL(){
+  var vs=mkSh(gl.VERTEX_SHADER,VERT);
+  var fs=mkSh(gl.FRAGMENT_SHADER,FRAG);
+  prog=gl.createProgram();
+  gl.attachShader(prog,vs); gl.attachShader(prog,fs);
   gl.linkProgram(prog);
 
-  // Quad: 4 vertici, triangle-strip
-  var hw = QW / 2;
-  var yb = -QH/2 + YOFF;   // bottom Y
-  var yt =  QH/2 + YOFF;   // top Y
-  var z  = -DIST;
-
-  // interleaved: x y z u v  (stride = 5 * 4 bytes = 20)
-  var verts = new Float32Array([
-    -hw,  yb,  z,   0.0, 1.0,   // bottom-left
-     hw,  yb,  z,   1.0, 1.0,   // bottom-right
-    -hw,  yt,  z,   0.0, 0.0,   // top-left
-     hw,  yt,  z,   1.0, 0.0,   // top-right
+  var hw=QW/2, hh=QH/2;
+  var yb=-hh+YOFF, yt=hh+YOFF, z=-DIST;
+  // Triangle-strip: BL, BR, TL, TR
+  var v=new Float32Array([
+    -hw, yb, z,  0,1,
+     hw, yb, z,  1,1,
+    -hw, yt, z,  0,0,
+     hw, yt, z,  1,0,
   ]);
+  vbo=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+  gl.bufferData(gl.ARRAY_BUFFER,v,gl.STATIC_DRAW);
 
-  vbo = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+  locPos =gl.getAttribLocation(prog,'aPos');
+  locUV  =gl.getAttribLocation(prog,'aUV');
+  locProj=gl.getUniformLocation(prog,'uProj');
+  locTex =gl.getUniformLocation(prog,'uTex');
 
-  locPos  = gl.getAttribLocation(prog,  'aPos');
-  locUV   = gl.getAttribLocation(prog,  'aUV');
-  locProj = gl.getUniformLocation(prog, 'uProj');
-  locTex  = gl.getUniformLocation(prog, 'uTex');
-
-  tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 }
+function mkSh(type,src){ var s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); return s; }
 
-function makeShader(type, src) {
-  var s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  return s;
-}
-
-// ─────────────────────────────────────────────────────────
-// XR RENDER LOOP
-// ─────────────────────────────────────────────────────────
-var lastT = 0;
-
-function onXRFrame(t, frame) {
+// ═══════════════════════════════════════════════════════════
+// XR FRAME LOOP
+// ═══════════════════════════════════════════════════════════
+var lastT=0;
+function onXRFrame(t,frame){
   session.requestAnimationFrame(onXRFrame);
+  var dt=lastT?(t-lastT)/1000:0.016; lastT=t;
 
-  var dt = lastT ? (t - lastT) / 1000 : 0.016;
-  lastT = t;
-
-  // Aggiorna stato
-  state.compassDeg += 0.04;
-  state.abilities.forEach(ab => {
-    if (ab.cd > 0) ab.cd = Math.max(0, ab.cd - dt);
-  });
-  if (state.notify.timer > 0) {
-    state.notify.timer -= dt;
-    state.notify.alpha = Math.min(1, state.notify.timer / 0.4);
-    if (state.notify.timer <= 0) state.notify.alpha = 0;
+  state.abilities.forEach(ab=>{ if(ab.cd>0) ab.cd=Math.max(0,ab.cd-dt); });
+  if(state.notify.timer>0){
+    state.notify.timer-=dt;
+    state.notify.alpha=Math.min(1,state.notify.timer/0.4);
+    if(state.notify.timer<=0) state.notify.alpha=0;
   }
 
-  var pose = frame.getViewerPose(refSpace);
-  if (!pose) return;
+  var pose=frame.getViewerPose(refSpace);
+  if(!pose) return;
 
-  var layer = session.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // Aggiorna heading da XR pose (yaw estratto dal quaternione)
+  var q=pose.transform.orientation;
+  var yaw=Math.atan2(2*(q.y*q.w+q.x*q.z), 1-2*(q.y*q.y+q.z*q.z));
+  state.heading = ((-yaw * 180/Math.PI) % 360 + 360) % 360;
 
-  // Disegna HUD su canvas 2D (una volta sola)
+  var layer=session.renderState.baseLayer;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,layer.framebuffer);
+  gl.clearColor(0,0,0,0);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
   drawHUD();
 
-  // Carica texture una volta
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hc);
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hc);
 
-  // Per ogni occhio: viewport + proiezione specifica
-  for (var view of pose.views) {
-    var vp = layer.getViewport(view);
-    gl.viewport(vp.x, vp.y, vp.width, vp.height);
-
-    // view.projectionMatrix è già col-major Float32Array per quell'occhio
-    // I vertici sono in view-space (camera-local) → solo proiezione, nessuna view matrix
-    // Il quad "segue la testa" perché i vertici sono sempre davanti alla camera,
-    // indipendentemente dalla rotazione — comportamento head-locked corretto.
+  for(var view of pose.views){
+    var vp=layer.getViewport(view);
+    gl.viewport(vp.x,vp.y,vp.width,vp.height);
     renderEye(view.projectionMatrix);
   }
 }
 
-function renderEye(projMatrix) {
+function renderEye(proj){
   gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-
-  // stride = 5 floats × 4 byte = 20
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
   gl.enableVertexAttribArray(locPos);
-  gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 20, 0);
+  gl.vertexAttribPointer(locPos,3,gl.FLOAT,false,20,0);
   gl.enableVertexAttribArray(locUV);
-  gl.vertexAttribPointer(locUV,  2, gl.FLOAT, false, 20, 12);
-
-  gl.uniformMatrix4fv(locProj, false, projMatrix);
-  gl.uniform1i(locTex, 0);
-
+  gl.vertexAttribPointer(locUV,2,gl.FLOAT,false,20,12);
+  gl.uniformMatrix4fv(locProj,false,proj);
+  gl.uniform1i(locTex,0);
   gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // pre-moltiplicato
+  gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
   gl.disable(gl.DEPTH_TEST);
-
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
-// ─────────────────────────────────────────────────────────
-// HUD 2D — 512×128, solo bussola in alto + 4 abilità in basso
-// ─────────────────────────────────────────────────────────
-var PINK     = 'rgba(255,45,155,1)';
-var PINK_DIM = 'rgba(255,45,155,0.55)';
-var WHITE    = 'rgba(255,255,255,0.92)';
+// ═══════════════════════════════════════════════════════════
+// HUD DRAW 2D — 1024×512
+// Layout fedele allo screenshot del Destroyer:
+//  - Bussola sottile in cima al centro
+//  - Barre HP segmentate al centro (sinistra + destra + numero)
+//  - Slot X-shield sotto le barre
+//  - 2 cerchi abilità a sinistra, 2 a destra
+//  - Bordi pixelati rosa sulle fasce laterali (dove sono le mani)
+//  - Timer cerchio in alto a sinistra
+// ═══════════════════════════════════════════════════════════
+var P   = 'rgba(255,45,155,1)';
+var PD  = 'rgba(255,45,155,0.6)';
+var PL  = 'rgba(255,45,155,0.2)';
+var PX  = 'rgba(255,45,155,0.08)';
+var W9  = 'rgba(255,255,255,0.9)';
+var W4  = 'rgba(255,255,255,0.45)';
+var YEL = 'rgba(255,220,0,1)';
 
-function drawHUD() {
-  hx.clearRect(0, 0, HW, HH);
+function drawHUD(){
+  hx.clearRect(0,0,HW,HH);
+  drawBorderFrames();
   drawCompass();
+  drawTimer();
+  drawHealthBars();
   drawAbilities();
   drawNotify();
 }
 
-// ── COMPASS ──────────────────────────────────────────────
-function drawCompass() {
-  var cx = HW / 2, y0 = 6;
-  var trackW = 380;  // pixel visibili
-  var tickPx = 3.2;  // pixel per grado
-  var halfDeg = Math.ceil((trackW / 2) / tickPx) + 1;
+// ── BORDER FRAMES (bordi laterali pixelati, posizione mani) ──
+// Le mani nelle foto sono a circa 15-20% dai bordi
+// Quindi i frame laterali partono da ~x=30 e x=HW-30
+function drawBorderFrames(){
+  var bw=32;  // larghezza banda bordo
+  var bh=HH;
+
+  // Sfondo leggermente scuro per le bande laterali
+  hx.fillStyle='rgba(0,0,0,0.0)'; // trasparente, solo il frame
+
+  // ── BORDO SINISTRO ──
+  var lx=28;
+  drawPixelFrame(lx, 0, bw, bh, 'left');
+
+  // ── BORDO DESTRO ──
+  var rx=HW-lx-bw;
+  drawPixelFrame(rx, 0, bw, bh, 'right');
+}
+
+function drawPixelFrame(x,y,w,h,side){
+  var thick=3;
+  var segLen=40;
+  var gap=8;
+
+  // Linea verticale principale
+  hx.fillStyle=P;
+  if(side==='left'){
+    hx.fillRect(x,y,thick,h);
+    // Denti orizzontali (verso destra)
+    for(var ty=20; ty<h-20; ty+=segLen+gap){
+      hx.fillRect(x, ty, w*0.6, thick);
+      hx.fillStyle='rgba(255,45,155,0.4)';
+      hx.fillRect(x, ty+segLen-thick, w*0.4, thick);
+      hx.fillStyle=P;
+    }
+    // Pixel dots decorativi
+    hx.fillStyle='rgba(255,45,155,0.5)';
+    for(var dy=10; dy<h; dy+=16){
+      hx.fillRect(x+thick+2, dy, 3, 3);
+      if(dy%32===10) hx.fillRect(x+thick+7, dy, 3, 3);
+    }
+    // Angoli top/bottom
+    hx.fillStyle=P;
+    hx.fillRect(x,    y,    w*0.8, thick);
+    hx.fillRect(x,    y+thick, thick+4, thick);
+    hx.fillRect(x,    h-thick, w*0.8, thick);
+    hx.fillRect(x,    h-thick*2-3, thick+4, thick);
+    // Piccolo quadrato pixel angolo
+    hx.fillStyle='rgba(255,45,155,0.7)';
+    hx.fillRect(x+thick+1,   y+thick+1,   5,5);
+    hx.fillRect(x+thick+1,   h-thick-6,   5,5);
+  } else {
+    var rx2=x+w-thick;
+    hx.fillRect(rx2,y,thick,h);
+    for(var ty2=20; ty2<h-20; ty2+=segLen+gap){
+      hx.fillRect(x+w*0.4, ty2, w*0.6, thick);
+      hx.fillStyle='rgba(255,45,155,0.4)';
+      hx.fillRect(x+w*0.6, ty2+segLen-thick, w*0.4, thick);
+      hx.fillStyle=P;
+    }
+    hx.fillStyle='rgba(255,45,155,0.5)';
+    for(var dy2=10; dy2<h; dy2+=16){
+      hx.fillRect(rx2-6, dy2, 3, 3);
+      if(dy2%32===10) hx.fillRect(rx2-11, dy2, 3, 3);
+    }
+    hx.fillStyle=P;
+    hx.fillRect(x+w*0.2, y, w*0.8, thick);
+    hx.fillRect(rx2-4,   y+thick, thick+4, thick);
+    hx.fillRect(x+w*0.2, h-thick, w*0.8, thick);
+    hx.fillRect(rx2-4,   h-thick*2-3, thick+4, thick);
+    hx.fillStyle='rgba(255,45,155,0.7)';
+    hx.fillRect(rx2-6,   y+thick+1,   5,5);
+    hx.fillRect(rx2-6,   h-thick-6,   5,5);
+  }
+}
+
+// ── BUSSOLA ───────────────────────────────────────────────
+// Posizione: in alto al centro, sottile
+// heading = direzione attuale (estratto dal giroscopio XR)
+function drawCompass(){
+  var cx=HW/2, y0=14;
+  var trackW=480;
+  var tickPx=3.8;   // pixel per grado
+  var halfDeg=Math.ceil((trackW/2)/tickPx)+2;
+  var deg=state.heading;
 
   hx.save();
-  hx.beginPath();
-  hx.rect(cx - trackW/2, y0, trackW, 52);
-  hx.clip();
+  hx.beginPath(); hx.rect(cx-trackW/2, y0, trackW, 62); hx.clip();
 
-  for (var d = Math.round(state.compassDeg) - halfDeg;
-           d <= Math.round(state.compassDeg) + halfDeg; d++) {
-    var nd  = ((d % 360) + 360) % 360;
-    var xOf = (d - state.compassDeg) * tickPx;
-    var x   = cx + xOf;
-    var dist = Math.abs(xOf) / (trackW / 2);
-    var al   = Math.max(0, 1 - dist * 1.35);
-    if (al < 0.02) continue;
+  for(var d=Math.round(deg)-halfDeg; d<=Math.round(deg)+halfDeg; d++){
+    var nd=((d%360)+360)%360;
+    var xOf=(d-deg)*tickPx;
+    var x=cx+xOf;
+    var dist=Math.abs(xOf)/(trackW/2);
+    var al=Math.max(0,1-dist*1.3);
+    if(al<0.02) continue;
 
-    var isCard = nd % 90  === 0;
-    var isMaj  = nd % 45  === 0;
-    var is15   = nd % 15  === 0;
-    var is5    = nd % 5   === 0;
+    var isC=nd%90===0, isM=nd%45===0, is15=nd%15===0, is5=nd%5===0;
+    var th=isC?22:isM?16:is15?10:is5?6:3;
 
-    var tickH = isCard ? 18 : isMaj ? 13 : is15 ? 9 : is5 ? 5 : 3;
-    hx.strokeStyle = isCard ? `rgba(255,255,255,${al})`
-                   : isMaj  ? `rgba(255,45,155,${al})`
-                   :           `rgba(255,45,155,${al * 0.28})`;
-    hx.lineWidth = isCard ? 2 : isMaj ? 1.3 : 0.7;
-    hx.beginPath();
-    hx.moveTo(x, y0 + 3);
-    hx.lineTo(x, y0 + 3 + tickH);
-    hx.stroke();
+    hx.strokeStyle=isC?`rgba(255,255,255,${al})`
+                  :isM?`rgba(255,45,155,${al})`
+                      :`rgba(255,45,155,${al*0.3})`;
+    hx.lineWidth=isC?2.5:isM?1.5:0.8;
+    hx.beginPath(); hx.moveTo(x,y0+4); hx.lineTo(x,y0+4+th); hx.stroke();
 
-    if (isCard) {
-      var lab = {0:'N', 90:'E', 180:'S', 270:'W'};
-      hx.fillStyle = `rgba(255,255,255,${al})`;
-      hx.font = `bold 11px "Courier New"`;
-      hx.textAlign = 'center';
-      hx.fillText(lab[nd] || '', x, y0 + 38);
-    } else if (isMaj) {
-      var diag = {45:'NE', 135:'SE', 225:'SW', 315:'NW'};
-      if (diag[nd]) {
-        hx.fillStyle = `rgba(255,45,155,${al * 0.8})`;
-        hx.font = `8px "Courier New"`;
-        hx.textAlign = 'center';
-        hx.fillText(diag[nd], x, y0 + 35);
+    if(isC){
+      var lab={0:'N',90:'E',180:'S',270:'W'};
+      hx.fillStyle=`rgba(255,255,255,${al})`;
+      hx.font=`bold 14px "Courier New"`;
+      hx.textAlign='center';
+      hx.fillText(lab[nd]||'',x,y0+46);
+    } else if(isM){
+      var diag={45:'NE',135:'SE',225:'SW',315:'NW'};
+      if(diag[nd]){
+        hx.fillStyle=`rgba(255,45,155,${al*0.85})`;
+        hx.font=`10px "Courier New"`;
+        hx.textAlign='center';
+        hx.fillText(diag[nd],x,y0+44);
       }
     }
   }
   hx.restore();
 
   // Fade laterale
-  var fade = hx.createLinearGradient(cx - trackW/2, 0, cx + trackW/2, 0);
-  fade.addColorStop(0,    'rgba(0,0,0,1)');
-  fade.addColorStop(0.08, 'rgba(0,0,0,0)');
-  fade.addColorStop(0.92, 'rgba(0,0,0,0)');
-  fade.addColorStop(1,    'rgba(0,0,0,1)');
-  hx.fillStyle = fade;
-  hx.fillRect(cx - trackW/2, y0, trackW, 52);
+  var fade=hx.createLinearGradient(cx-trackW/2,0,cx+trackW/2,0);
+  fade.addColorStop(0,'rgba(0,0,0,1)');
+  fade.addColorStop(0.07,'rgba(0,0,0,0)');
+  fade.addColorStop(0.93,'rgba(0,0,0,0)');
+  fade.addColorStop(1,'rgba(0,0,0,1)');
+  hx.fillStyle=fade; hx.fillRect(cx-trackW/2,y0,trackW,62);
 
-  // Triangolo centrale ▼
-  hx.fillStyle = PINK;
+  // Triangolo puntatore ▼ al centro
+  hx.fillStyle=P;
   hx.beginPath();
-  hx.moveTo(cx - 5, y0);
-  hx.lineTo(cx + 5, y0);
-  hx.lineTo(cx, y0 + 7);
-  hx.closePath();
-  hx.fill();
+  hx.moveTo(cx-6,y0); hx.lineTo(cx+6,y0); hx.lineTo(cx,y0+9);
+  hx.closePath(); hx.fill();
 
-  // Linea verticale centrale
-  hx.strokeStyle = PINK;
-  hx.lineWidth = 1.5;
-  hx.beginPath();
-  hx.moveTo(cx, y0 + 7);
-  hx.lineTo(cx, y0 + 22);
-  hx.stroke();
+  // Linea verticale
+  hx.strokeStyle=P; hx.lineWidth=2;
+  hx.beginPath(); hx.moveTo(cx,y0+9); hx.lineTo(cx,y0+28); hx.stroke();
 
   // Heading numerico
-  var deg360 = ((Math.round(state.compassDeg) % 360) + 360) % 360;
-  var cardArr = ['N','NNE','NE','ENE','E','ESE','SE','SSE',
-                 'S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var ci = Math.round(deg360 / 22.5) % 16;
-  hx.fillStyle = PINK;
-  hx.font = `bold 9px "Courier New"`;
-  hx.textAlign = 'center';
-  hx.fillText(cardArr[ci] + ' ' + deg360, cx, y0 + 50);
+  var d360=((Math.round(deg)%360)+360)%360;
+  var carr=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var ci=Math.round(d360/22.5)%16;
+  hx.fillStyle=P;
+  hx.font=`bold 11px "Courier New"`;
+  hx.textAlign='center';
+  hx.fillText(carr[ci]+' '+d360, cx, y0+60);
 }
 
-// ── ABILITÀ — 4 cerchi piccoli ────────────────────────────
-function drawAbilities() {
-  var r    = 15;
-  var yc   = HH - 22;
-  var cx   = HW / 2;
-  // distanza tra i due gruppi (sinistra / destra)
-  var gap  = 55;  // dal centro
-  var sep  = 36;  // tra i due cerchi dello stesso gruppo
+// ── TIMER (cerchio in alto a sinistra) ─────────────────────
+function drawTimer(){
+  var tx=90, ty=65, r=40;
+  hx.strokeStyle='rgba(255,45,155,0.7)';
+  hx.lineWidth=2;
+  hx.beginPath(); hx.arc(tx,ty,r,0,Math.PI*2); hx.stroke();
 
-  var pos = [
-    [cx - gap - sep, yc],
-    [cx - gap,       yc],
-    [cx + gap,       yc],
-    [cx + gap + sep, yc],
-  ];
-  var icons = ['◆','▲','⬡','↑'];
-  var keys  = ['L1','R1','L·R','R1'];
+  var m=Math.floor(state.timerSec/60), s=state.timerSec%60;
+  var str=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  hx.fillStyle=W9;
+  hx.font=`bold 18px "Courier New"`;
+  hx.textAlign='center'; hx.textBaseline='middle';
+  hx.fillText(str,tx,ty);
+  hx.textBaseline='alphabetic';
+}
 
-  for (var i = 0; i < 4; i++) {
-    var ab    = state.abilities[i];
-    var px    = pos[i][0], py = pos[i][1];
-    var ready = ab.cd <= 0;
+// ── BARRE HP SEGMENTATE (cuore dello screenshot) ──────────
+// Dallo screenshot: barra sinistra (8 seg, 2 gialli poi rosa),
+// numero al centro (17), barra destra speculare,
+// sotto: 3 slot X-shield + 2 vuoti
+function drawHealthBars(){
+  var cx=HW/2, yBar=155;
+  var segW=32, segH=20, segGap=3;
+  var totalSegs=8;
+  // filled: basato su hp/hpMax
+  var filled=Math.round((state.hp/state.hpMax)*totalSegs);
 
-    // Cerchio sfondo
-    hx.beginPath(); hx.arc(px, py, r, 0, Math.PI * 2);
-    hx.fillStyle = ready ? 'rgba(255,45,155,0.07)' : 'rgba(0,0,0,0.4)';
+  // ── Barra sinistra (da centro verso sinistra) ──
+  // I segmenti si allontanano dal centro
+  var barStartX=cx-20; // punto dove finisce la barra sinistra vicino al centro
+
+  for(var i=0;i<totalSegs;i++){
+    var sx=barStartX - (i+1)*(segW+segGap) + segGap;
+    var isF=(totalSegs-i)<=filled;
+    var isYellow=(totalSegs-i)<=2 && isF; // ultimi 2 gialli (poco HP)
+
+    // Clip shape con piccola inclinazione (parallelogramma)
+    hx.beginPath();
+    hx.moveTo(sx+4,     yBar);
+    hx.lineTo(sx+segW,  yBar);
+    hx.lineTo(sx+segW-4,yBar+segH);
+    hx.lineTo(sx,       yBar+segH);
+    hx.closePath();
+
+    if(isF){
+      hx.fillStyle=isYellow?YEL:P;
+    } else {
+      hx.fillStyle='rgba(255,45,155,0.1)';
+    }
     hx.fill();
 
-    // Bordo
-    hx.strokeStyle = ready ? PINK : 'rgba(255,45,155,0.22)';
-    hx.lineWidth   = ready ? 1.5  : 1;
-    hx.beginPath(); hx.arc(px, py, r, 0, Math.PI * 2);
+    if(!isF){
+      hx.strokeStyle='rgba(255,45,155,0.25)';
+      hx.lineWidth=1;
+      hx.stroke();
+    }
+  }
+
+  // ── Barra destra (speculare, da centro verso destra) ──
+  var barStartX2=cx+20;
+  for(var j=0;j<totalSegs;j++){
+    var sx2=barStartX2 + j*(segW+segGap);
+    var isF2=(j+1)<=filled;
+
+    hx.beginPath();
+    hx.moveTo(sx2,      yBar);
+    hx.lineTo(sx2+segW-4,yBar);
+    hx.lineTo(sx2+segW, yBar+segH);
+    hx.lineTo(sx2+4,    yBar+segH);
+    hx.closePath();
+
+    hx.fillStyle=isF2?P:'rgba(255,45,155,0.1)';
+    hx.fill();
+    if(!isF2){
+      hx.strokeStyle='rgba(255,45,155,0.25)'; hx.lineWidth=1; hx.stroke();
+    }
+  }
+
+  // ── Numero HP al centro ──
+  hx.fillStyle=W9;
+  hx.font=`bold 26px "Courier New"`;
+  hx.textAlign='center'; hx.textBaseline='middle';
+  hx.fillText(state.hp, cx, yBar+segH/2);
+  hx.textBaseline='alphabetic';
+
+  // ── Dot separatori ai lati del numero ──
+  hx.fillStyle=P;
+  hx.beginPath(); hx.arc(cx-18,yBar+segH/2,4,0,Math.PI*2); hx.fill();
+  hx.beginPath(); hx.arc(cx+18,yBar+segH/2,4,0,Math.PI*2); hx.fill();
+
+  // ── X-shield slots sotto ──
+  drawShieldSlots(cx, yBar+segH+18);
+}
+
+function drawShieldSlots(cx, y){
+  var sw=28, sh=18, sg=5;
+  var total=5;
+  var filled=state.shieldSegs.filter(Boolean).length;
+  var totalW=total*(sw+sg)-sg;
+  var sx=cx-totalW/2;
+
+  for(var i=0;i<total;i++){
+    var x=sx+i*(sw+sg);
+    var isF=i<filled;
+
+    // Shape X (parallelogramma inclinato con X dentro)
+    hx.beginPath();
+    hx.moveTo(x+3,  y);
+    hx.lineTo(x+sw, y);
+    hx.lineTo(x+sw-3, y+sh);
+    hx.lineTo(x,    y+sh);
+    hx.closePath();
+
+    hx.fillStyle=isF?'rgba(255,45,155,0.12)':'rgba(0,0,0,0)';
+    hx.fill();
+    hx.strokeStyle=isF?P:'rgba(255,45,155,0.22)';
+    hx.lineWidth=isF?1.5:1;
     hx.stroke();
 
-    if (!ready) {
+    // X inside
+    hx.strokeStyle=isF?P:'rgba(255,45,155,0.2)';
+    hx.lineWidth=1.5;
+    hx.beginPath();
+    hx.moveTo(x+5,   y+3);  hx.lineTo(x+sw-5, y+sh-3);
+    hx.stroke();
+    hx.beginPath();
+    hx.moveTo(x+sw-5,y+3);  hx.lineTo(x+5,    y+sh-3);
+    hx.stroke();
+  }
+}
+
+// ── ABILITÀ (4 cerchi: 2 sx, 2 dx) ───────────────────────
+// Posizionati nella zona dove sono le mani (laterale)
+// ~20-25% dai bordi
+function drawAbilities(){
+  var r=36;
+  var yc=HH/2+20;  // centrati verticalmente
+
+  // Posizioni: vicino ai bordi laterali (zona mani)
+  // Bordi a x=28-60, quindi cerchi a ~x=100 e x=160
+  var lx1=108, lx2=178;
+  var rx1=HW-178, rx2=HW-108;
+
+  var pos=[[lx1,yc],[lx2,yc],[rx1,yc],[rx2,yc]];
+  var keys=['L1','R1','L1 R1','R1'];
+
+  for(var i=0;i<4;i++){
+    var ab=state.abilities[i];
+    var px=pos[i][0], py=pos[i][1];
+    var ready=ab.cd<=0;
+
+    // Sfondo cerchio
+    hx.beginPath(); hx.arc(px,py,r,0,Math.PI*2);
+    hx.fillStyle=ready?'rgba(255,45,155,0.08)':'rgba(0,0,0,0.5)';
+    hx.fill();
+
+    // Bordo cerchio
+    hx.strokeStyle=ready?P:'rgba(255,45,155,0.25)';
+    hx.lineWidth=ready?2.5:1.5;
+    hx.beginPath(); hx.arc(px,py,r,0,Math.PI*2); hx.stroke();
+
+    if(!ready){
       // Arco cooldown
-      var pct = (ab.maxCd - ab.cd) / ab.maxCd;
-      hx.strokeStyle = 'rgba(255,45,155,0.55)';
-      hx.lineWidth   = 2.5;
+      var pct=(ab.maxCd-ab.cd)/ab.maxCd;
+      hx.strokeStyle='rgba(255,45,155,0.6)';
+      hx.lineWidth=4;
       hx.beginPath();
-      hx.arc(px, py, r - 1, -Math.PI/2, -Math.PI/2 + pct * Math.PI * 2);
+      hx.arc(px,py,r-2,-Math.PI/2,-Math.PI/2+pct*Math.PI*2);
       hx.stroke();
       // Numero
-      hx.fillStyle = 'rgba(255,45,155,0.9)';
-      hx.font = `bold 10px "Courier New"`;
-      hx.textAlign    = 'center';
-      hx.textBaseline = 'middle';
-      hx.fillText(Math.ceil(ab.cd) + 's', px, py);
-      hx.textBaseline = 'alphabetic';
+      hx.fillStyle='rgba(255,45,155,0.95)';
+      hx.font=`bold 16px "Courier New"`;
+      hx.textAlign='center'; hx.textBaseline='middle';
+      hx.fillText(Math.ceil(ab.cd)+'s',px,py);
+      hx.textBaseline='alphabetic';
     } else {
-      hx.fillStyle = PINK;
-      hx.font = `12px "Courier New"`;
-      hx.textAlign    = 'center';
-      hx.textBaseline = 'middle';
-      hx.fillText(icons[i], px, py);
-      hx.textBaseline = 'alphabetic';
+      // Icona
+      hx.fillStyle=P;
+      hx.font=`20px "Courier New"`;
+      hx.textAlign='center'; hx.textBaseline='middle';
+      hx.fillText(ab.icon,px,py);
+      hx.textBaseline='alphabetic';
     }
 
-    // Key hint
-    hx.fillStyle = 'rgba(255,45,155,0.35)';
-    hx.font = `7px "Courier New"`;
-    hx.textAlign = 'center';
-    hx.fillText(keys[i], px, py + r + 9);
+    // Nome abilità (sopra)
+    hx.fillStyle='rgba(255,45,155,0.5)';
+    hx.font=`8px "Courier New"`;
+    hx.textAlign='center';
+    hx.fillText(ab.name.split(' ')[0].toUpperCase(), px, py-r-8);
+
+    // Key hint (sotto)
+    hx.fillStyle='rgba(255,45,155,0.4)';
+    hx.font=`9px "Courier New"`;
+    hx.fillText(keys[i], px, py+r+14);
   }
 }
 
 // ── NOTIFY ───────────────────────────────────────────────
-function drawNotify() {
-  if (state.notify.alpha <= 0) return;
-  var a  = state.notify.alpha;
-  var cx = HW / 2, cy = HH / 2 + 6;
-  hx.font = `bold 9px "Courier New"`;
-  var tw = hx.measureText(state.notify.text).width + 24;
-  var th = 18;
-  hx.fillStyle   = `rgba(0,0,0,${0.5 * a})`;
-  hx.strokeStyle = `rgba(255,45,155,${a})`;
-  hx.lineWidth   = 1;
-  hx.beginPath();
-  hx.rect(cx - tw/2, cy - th/2, tw, th);
+function drawNotify(){
+  if(state.notify.alpha<=0) return;
+  var a=state.notify.alpha;
+  var cx=HW/2, cy=HH*0.44;
+  hx.font=`bold 13px "Courier New"`;
+  var tw=hx.measureText(state.notify.text).width+32;
+  hx.fillStyle=`rgba(0,0,0,${0.6*a})`;
+  hx.strokeStyle=`rgba(255,45,155,${a})`;
+  hx.lineWidth=1.5;
+  hx.beginPath(); hx.rect(cx-tw/2,cy-13,tw,26);
   hx.fill(); hx.stroke();
-  hx.fillStyle    = `rgba(255,45,155,${a})`;
-  hx.textAlign    = 'center';
-  hx.textBaseline = 'middle';
-  hx.fillText(state.notify.text, cx, cy);
-  hx.textBaseline = 'alphabetic';
+  hx.fillStyle=`rgba(255,45,155,${a})`;
+  hx.textAlign='center'; hx.textBaseline='middle';
+  hx.fillText(state.notify.text,cx,cy);
+  hx.textBaseline='alphabetic';
 }
 </script>
 </body>
