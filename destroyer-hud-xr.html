@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html>
 <head>
 <meta charset="UTF-8">
@@ -51,7 +52,7 @@ canvas { position:fixed; inset:0; width:100%; height:100%; }
   </div>
   <div class="b-bwrap"><div class="b-bar"></div></div>
   <div class="b-ready">SYSTEM READY</div>
-  <div class="b-ver">v2.0.0</div>
+  <div class="b-ver">v2.1.0</div>
 </div>
 
 <button id="enterbtn">ENTRA IN VR</button>
@@ -374,19 +375,24 @@ function drawAbility(alpha) {
 
 // ── DEBUG 3D (ancorato come la bussola) ──────────────────
 function drawDebug(lOk, rOk, dist, touching) {
-  const x = 30, y = HH - 80;
-  ctx.fillStyle   = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(x - 6, y - 16, 260, 70);
-  ctx.fillStyle   = C_CYAN;
-  ctx.font        = '11px Courier New';
+  const w = 320, h = 80;
+  const x = HW/2 - w/2;
+  const y = HH - 110;
+  ctx.fillStyle   = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = C_CYAN; ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  ctx.font        = '13px Courier New';
   ctx.textAlign   = 'left';
-  ctx.globalAlpha = 0.8;
-  ctx.fillText('MANO SX: ' + (lOk ? 'RILEVATA' : '—'),       x, y);
-  ctx.fillText('MANO DX: ' + (rOk ? 'RILEVATA' : '—'),       x, y + 18);
-  ctx.fillText('DIST:    ' + dist.toFixed(3) + 'm ' + (touching ? '◆ TOCCO' : ''), x, y + 36);
-  ctx.fillStyle   = touching ? C_MAGENTA : C_CYAN;
-  ctx.fillText('ABILITÀ: ' + (abilityOn ? 'ON' : 'OFF'),     x, y + 54);
   ctx.globalAlpha = 1;
+  ctx.fillStyle   = lOk ? C_CYAN : 'rgba(0,232,255,0.3)';
+  ctx.fillText('MANO SX: ' + (lOk ? 'OK' : '—'), x+12, y+20);
+  ctx.fillStyle   = rOk ? C_CYAN : 'rgba(0,232,255,0.3)';
+  ctx.fillText('MANO DX: ' + (rOk ? 'OK' : '—'), x+12, y+38);
+  ctx.fillStyle   = touching ? C_MAGENTA : C_CYAN;
+  ctx.fillText('DIST: ' + (dist < 999 ? dist.toFixed(3)+'m' : '—') + (touching ? '  ◆ TOCCO' : ''), x+12, y+56);
+  ctx.fillStyle   = abilityOn ? C_MAGENTA : C_CYAN;
+  ctx.fillText('ABILITA: ' + (abilityOn ? 'ON' : 'OFF'), x+12, y+72);
 }
 
 // ── DRAW FRAME ───────────────────────────────────────────
@@ -577,16 +583,16 @@ function xrFrame(time, frame) {
   // Disegna HUD sul canvas 2D
   drawFrame();
 
-  // Renderizza su ogni viewport (occhio sinistro + destro)
+  // Renderizza UNA SOLA VOLTA sull'intero framebuffer stereo
+  // Il framebuffer XR è largo il doppio (occhio sx | occhio dx)
+  // Disegnando una volta a viewport piena, ogni occhio riceve lo stesso HUD → niente doppio
   if(pose && xrGLLayer) {
+    const fbW = xrGLLayer.framebufferWidth;
+    const fbH = xrGLLayer.framebufferHeight;
     gl.bindFramebuffer(gl.FRAMEBUFFER, xrGLLayer.framebuffer);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    for(const view of pose.views) {
-      const vp = xrGLLayer.getViewport(view);
-      renderHUD(xrGLLayer.framebuffer, vp.x, vp.y, vp.width, vp.height);
-    }
+    renderHUD(xrGLLayer.framebuffer, 0, 0, fbW, fbH);
   }
 }
 
@@ -672,5 +678,6 @@ window.addEventListener('load', () => {
   }, 5200);
 });
 </script>
+
 </body>
 </html>
