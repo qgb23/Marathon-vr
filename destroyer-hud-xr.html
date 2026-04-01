@@ -6,51 +6,43 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { width:100%; height:100%; background:#000; overflow:hidden; font-family:'Courier New',monospace; }
-canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+canvas { position:fixed; inset:0; width:100%; height:100%; }
 #boot {
-  position:fixed; inset:0; background:#000;
+  position:fixed; inset:0; background:#000; z-index:999;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  z-index:9999; transition:opacity 0.8s;
+  transition:opacity 0.8s;
 }
-.b-sub  { font-size:10px; letter-spacing:4px; color:#00e8ff; margin-bottom:24px; opacity:0; animation:fi 0.4s 0.4s forwards; }
-.b-title{ font-size:32px; letter-spacing:10px; color:#ff2afc; margin-bottom:44px; opacity:0; animation:fi 0.4s 0.9s forwards; }
-.b-lines{ display:flex; flex-direction:column; align-items:flex-start; }
-.b-line { font-size:10px; letter-spacing:2px; color:#00e8ff; margin:5px 0; display:flex; align-items:center; gap:8px; opacity:0; }
-.b-line:nth-child(1){animation:fi 0.3s 1.4s forwards;}
-.b-line:nth-child(2){animation:fi 0.3s 1.8s forwards;}
-.b-line:nth-child(3){animation:fi 0.3s 2.2s forwards;}
-.b-line:nth-child(4){animation:fi 0.3s 2.6s forwards;}
-.b-line:nth-child(5){animation:fi 0.3s 3.0s forwards;}
-.b-dot  { width:5px; height:5px; border-radius:50%; background:#ff2afc; flex-shrink:0; }
-.b-bwrap{ width:280px; height:2px; background:#1a001a; margin-top:36px; opacity:0; animation:fi 0.3s 3.2s forwards; }
-.b-bar  { height:100%; width:0; background:#ff2afc; animation:lb 1s 3.4s forwards; }
-.b-ready{ font-size:10px; letter-spacing:5px; color:#ff2afc; margin-top:16px; opacity:0; animation:fi 0.5s 4.5s forwards; }
-.b-ver  { font-size:13px; letter-spacing:4px; color:#00e8ff; margin-top:14px; opacity:0; animation:fi 0.3s 4.7s forwards; border:1px solid rgba(0,232,255,0.4); padding:4px 14px; }
-@keyframes fi { to{opacity:1;} }
-@keyframes lb { to{width:100%;} }
+.b-logo  { font-size:10px; letter-spacing:4px; color:#00e8ff; margin-bottom:20px; opacity:0; animation:fi 0.4s 0.3s forwards; }
+.b-title { font-size:30px; letter-spacing:10px; color:#ff2afc; margin-bottom:40px; opacity:0; animation:fi 0.4s 0.8s forwards; }
+.b-line  { font-size:10px; letter-spacing:2px; color:#00e8ff; margin:4px 0; display:flex; align-items:center; gap:8px; opacity:0; }
+.b-line:nth-child(1){animation:fi 0.3s 1.3s forwards;}
+.b-line:nth-child(2){animation:fi 0.3s 1.7s forwards;}
+.b-line:nth-child(3){animation:fi 0.3s 2.1s forwards;}
+.b-line:nth-child(4){animation:fi 0.3s 2.5s forwards;}
+.b-line:nth-child(5){animation:fi 0.3s 2.9s forwards;}
+.b-dot   { width:5px; height:5px; border-radius:50%; background:#ff2afc; }
+.b-bwrap { width:260px; height:2px; background:#1a001a; margin-top:30px; opacity:0; animation:fi 0.3s 3.1s forwards; }
+.b-bar   { height:100%; width:0; background:#ff2afc; animation:lb 1s 3.3s forwards; }
+.b-ready { font-size:10px; letter-spacing:5px; color:#ff2afc; margin-top:14px; opacity:0; animation:fi 0.4s 4.4s forwards; }
+.b-ver   { font-size:12px; letter-spacing:4px; color:#00e8ff; margin-top:12px; opacity:0; animation:fi 0.3s 4.6s forwards; border:1px solid rgba(0,232,255,0.4); padding:3px 12px; }
+@keyframes fi { to { opacity:1; } }
+@keyframes lb { to { width:100%; } }
 #enterbtn {
-  position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
-  background:transparent; border:1px solid #ff2afc;
-  color:#ff2afc; font-family:'Courier New',monospace;
-  font-size:12px; letter-spacing:3px; padding:12px 32px;
-  cursor:pointer; z-index:200; display:none;
-}
-#enterbtn:disabled { opacity:0.4; cursor:default; }
-#dbg {
-  position:fixed; bottom:16px; right:16px;
-  font-size:9px; color:rgba(0,232,255,0.6);
-  letter-spacing:1px; line-height:2;
-  z-index:200; text-align:right; display:none;
-  background:rgba(0,0,0,0.5); padding:6px 10px;
+  position:fixed; bottom:30px; left:50%; transform:translateX(-50%);
+  background:transparent; border:1px solid #ff2afc; color:#ff2afc;
+  font-family:'Courier New',monospace; font-size:12px; letter-spacing:3px;
+  padding:12px 30px; cursor:pointer; z-index:999; display:none;
 }
 </style>
 </head>
 <body>
-<canvas id="glcanvas"></canvas>
+
+<canvas id="c"></canvas>
+
 <div id="boot">
-  <div class="b-sub">BUNGIE // MARATHON SYSTEMS</div>
+  <div class="b-logo">BUNGIE // MARATHON SYSTEMS</div>
   <div class="b-title">DESTROYER</div>
-  <div class="b-lines">
+  <div style="display:flex;flex-direction:column;align-items:flex-start">
     <div class="b-line"><div class="b-dot"></div>NEURAL LINK............OK</div>
     <div class="b-line"><div class="b-dot"></div>SHIELD ARRAY...........OK</div>
     <div class="b-line"><div class="b-dot"></div>SENSOR SUITE...........OK</div>
@@ -59,325 +51,625 @@ canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:bloc
   </div>
   <div class="b-bwrap"><div class="b-bar"></div></div>
   <div class="b-ready">SYSTEM READY</div>
-  <div class="b-ver">v1.5.0</div>
+  <div class="b-ver">v2.0.0</div>
 </div>
+
 <button id="enterbtn">ENTRA IN VR</button>
-<div id="dbg">
-  <div id="d-l">SX: —</div>
-  <div id="d-r">DX: —</div>
-  <div id="d-dist">DIST: —</div>
-  <div id="d-a">ABILITÀ: OFF</div>
-</div>
+
 <script>
-// ============================================================
-// HUD 2D CANVAS
-// ============================================================
-const HW=1280, HH=720;
-const hud2d=document.createElement('canvas');
-hud2d.width=HW; hud2d.height=HH;
-const ctx=hud2d.getContext('2d');
+// ═══════════════════════════════════════════════════════════
+// WEBGL SETUP
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { xrCompatible:true, alpha:true, premultipliedAlpha:false });
 
-let heading=90, abilityAlpha=0, abilityOn=false;
+// Vertex shader: NDC quad con UV
+const VS = `
+  attribute vec2 aPos;
+  varying vec2 vUV;
+  void main(){
+    vUV = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5);
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }
+`;
+// Fragment shader: campiona texture 2D
+const FS = `
+  precision mediump float;
+  uniform sampler2D uTex;
+  varying vec2 vUV;
+  void main(){
+    gl_FragColor = texture2D(uTex, vUV);
+  }
+`;
 
-const DIRS=[[0,'N'],[45,'NE'],[90,'E'],[135,'SE'],[180,'S'],[225,'SO'],[270,'O'],[315,'NO']];
-function hdgLabel(d){
-  d=((d%360)+360)%360;
-  if(d<22)return'N';if(d<67)return'NE';if(d<112)return'E';
-  if(d<157)return'SE';if(d<202)return'S';if(d<247)return'SO';
-  if(d<292)return'O';return'NO';
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+// Quad che copre tutto lo schermo (-1 to 1)
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const aPosLoc = gl.getAttribLocation(prog, 'aPos');
+const uTexLoc = gl.getUniformLocation(prog, 'uTex');
+
+// Texture per l'HUD 2D
+const hudTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, hudTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+// ═══════════════════════════════════════════════════════════
+// HUD 2D CANVAS — tutto il disegno avviene qui
+// ═══════════════════════════════════════════════════════════
+const HW = 1280, HH = 720;
+const hud = document.createElement('canvas');
+hud.width = HW; hud.height = HH;
+const ctx = hud.getContext('2d');
+
+let heading = 90;
+let abilityOn = false;
+let abilityAlpha = 0;
+
+// Costanti colori Marathon
+const C_CYAN    = '#00e8ff';
+const C_MAGENTA = '#ff2afc';
+const C_YELLOW  = '#ffee00';
+const C_RED     = '#ff2222';
+
+// ── BUSSOLA ──────────────────────────────────────────────
+const COMPASS_DIRS = [
+  [0,'N'],[45,'NE'],[90,'E'],[135,'SE'],
+  [180,'S'],[225,'SO'],[270,'O'],[315,'NO']
+];
+
+function compassLabel(deg) {
+  deg = ((deg % 360) + 360) % 360;
+  if(deg < 22)  return 'N';
+  if(deg < 67)  return 'NE';
+  if(deg < 112) return 'E';
+  if(deg < 157) return 'SE';
+  if(deg < 202) return 'S';
+  if(deg < 247) return 'SO';
+  if(deg < 292) return 'O';
+  return 'NO';
 }
 
-function drawCompass(deg){
-  const cx=HW/2, cy=HH/2-80, trackW=320;
+function drawCompass(deg) {
+  // Posizionata in cima, centrata
+  const cx = HW / 2;
+  const cy = 60;
+  const W  = 340; // larghezza barra visibile
+  const pxPerDeg = W / 120; // 120 gradi visibili
+
+  // Clip alla larghezza della barra
   ctx.save();
-  ctx.beginPath(); ctx.rect(cx-trackW/2,cy-22,trackW,40); ctx.clip();
-  for(let d=-540;d<=540;d+=22.5){
-    const norm=((d%360)+360)%360;
-    const isMaj=(norm%45===0);
-    const delta=d-deg;
-    if(Math.abs(delta)>220) continue;
-    const x=cx+delta*(trackW/180);
-    const label=DIRS.find(e=>e[0]===norm);
-    ctx.globalAlpha=isMaj?0.95:0.3;
-    ctx.strokeStyle='#00e8ff'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(x,cy-(isMaj?11:5)); ctx.lineTo(x,cy+2); ctx.stroke();
-    if(label){
-      ctx.globalAlpha=1; ctx.fillStyle='#00e8ff';
-      ctx.font='bold 13px Courier New'; ctx.textAlign='center';
-      ctx.fillText(label[1],x,cy-15);
+  ctx.beginPath();
+  ctx.rect(cx - W/2, cy - 24, W, 46);
+  ctx.clip();
+
+  // Disegna i tick da -180 a +180 rispetto all'heading corrente
+  for(let d = -360; d <= 360; d += 22.5) {
+    const norm = ((d % 360) + 360) % 360;
+    const isMaj = (norm % 45 === 0);
+    const delta = d - (deg % 360 - (deg % 360 > 180 ? 360 : 0));
+
+    // Normalizza delta
+    let dd = d - deg;
+    while(dd > 180)  dd -= 360;
+    while(dd < -180) dd += 360;
+
+    if(Math.abs(dd) > 65) continue;
+    const x = cx + dd * pxPerDeg;
+
+    ctx.strokeStyle = C_CYAN;
+    ctx.lineWidth   = 1;
+    ctx.globalAlpha = isMaj ? 1.0 : 0.35;
+    ctx.beginPath();
+    ctx.moveTo(x, cy - (isMaj ? 12 : 5));
+    ctx.lineTo(x, cy);
+    ctx.stroke();
+
+    const label = COMPASS_DIRS.find(e => e[0] === norm);
+    if(label) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = C_CYAN;
+      ctx.font = 'bold 12px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(label[1], x, cy - 16);
     }
   }
   ctx.restore();
-  ctx.globalAlpha=1;
-  ctx.strokeStyle='#ff2afc'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(cx,cy-22); ctx.lineTo(cx,cy+4); ctx.stroke();
-  ctx.fillStyle='#ff2afc';
-  ctx.beginPath(); ctx.moveTo(cx-5,cy+4); ctx.lineTo(cx+5,cy+4); ctx.lineTo(cx,cy+11); ctx.closePath(); ctx.fill();
-  ctx.fillStyle='#ff2afc'; ctx.font='bold 14px Courier New'; ctx.textAlign='center';
-  ctx.fillText(hdgLabel(deg),cx,cy+27);
-  ctx.fillStyle='#00e8ff'; ctx.font='10px Courier New';
-  ctx.fillText(String(Math.round(deg)).padStart(3,'0')+'°',cx,cy+41);
+
+  // Ago centrale (magenta)
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = C_MAGENTA;
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 24);
+  ctx.lineTo(cx, cy + 2);
+  ctx.stroke();
+
+  // Triangolo
+  ctx.fillStyle = C_MAGENTA;
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, cy + 2);
+  ctx.lineTo(cx + 5, cy + 2);
+  ctx.lineTo(cx, cy + 9);
+  ctx.closePath();
+  ctx.fill();
+
+  // Testo heading
+  ctx.fillStyle   = C_MAGENTA;
+  ctx.font        = 'bold 13px Courier New';
+  ctx.textAlign   = 'center';
+  ctx.fillText(compassLabel(deg), cx, cy + 24);
+
+  ctx.fillStyle = C_CYAN;
+  ctx.font      = '10px Courier New';
+  ctx.fillText(String(Math.round(((deg % 360) + 360) % 360)).padStart(3, '0') + '°', cx, cy + 37);
 }
 
-function drawAbility(alpha){
-  if(alpha<=0.01) return;
-  const MC='#ff2afc';
-  ctx.globalAlpha=alpha;
-  ctx.fillStyle='rgba(255,20,180,0.07)'; ctx.fillRect(0,0,HW,HH);
-  ctx.fillStyle='rgba(255,20,180,0.022)';
-  for(let y=0;y<HH;y+=4) ctx.fillRect(0,y,HW,1);
-  ctx.strokeStyle=MC; ctx.lineWidth=1.5;
-  ctx.setLineDash([8,5]);
-  ctx.strokeRect(4,4,88,HH-8);
-  ctx.strokeRect(HW-92,4,88,HH-8);
+// ── ABILITY OVERLAY ──────────────────────────────────────
+function drawAbility(alpha) {
+  if(alpha < 0.01) return;
+  ctx.globalAlpha = alpha;
+
+  // Tinta generale
+  ctx.fillStyle = 'rgba(255, 20, 200, 0.07)';
+  ctx.fillRect(0, 0, HW, HH);
+
+  // Scanlines orizzontali
+  ctx.fillStyle = 'rgba(255, 20, 200, 0.025)';
+  for(let y = 0; y < HH; y += 4) ctx.fillRect(0, y, HW, 1);
+
+  ctx.strokeStyle = C_MAGENTA;
+  ctx.lineWidth   = 1.5;
+
+  // ── Cornice sinistra ──
+  ctx.setLineDash([8, 5]);
+  ctx.strokeRect(5, 5, 86, HH - 10);
   ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(4,95); ctx.lineTo(30,95); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(4,HH-95); ctx.lineTo(30,HH-95); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(HW-4,95); ctx.lineTo(HW-30,95); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(HW-4,HH-95); ctx.lineTo(HW-30,HH-95); ctx.stroke();
-  function pcross(x,y,a){ ctx.globalAlpha=alpha*a; ctx.fillStyle=MC; ctx.fillRect(x-6,y-2,12,4); ctx.fillRect(x-2,y-6,4,12); }
-  pcross(46,HH/2-32,0.9); pcross(46,HH/2+32,0.5);
-  pcross(HW-46,HH/2-32,0.9); pcross(HW-46,HH/2+32,0.5);
-  ctx.globalAlpha=alpha;
-  const midX=HW/2, topY=HH/2-80;
-  function drawCircle(cx,cy){ ctx.strokeStyle=MC; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(cx,cy,10,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx,cy-10); ctx.lineTo(cx,cy-6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+10,cy); ctx.lineTo(cx+6,cy); ctx.stroke(); }
-  drawCircle(midX-102,topY); drawCircle(midX-78,topY);
-  drawCircle(midX+78,topY); drawCircle(midX+102,topY);
-  function drawSegs(x,y,total,on,dim){ for(let i=0;i<total;i++){ const sx=x+i*19; ctx.strokeStyle=i<on?'#ffee00':MC; ctx.lineWidth=1; ctx.strokeRect(sx,y,17,9); if(i<on){ctx.fillStyle='#ffee00';ctx.fillRect(sx+1,y+1,15,7);}else if(i<on+dim){ctx.fillStyle='rgba(255,238,0,0.3)';ctx.fillRect(sx+1,y+1,15,7);}}}
-  const bY=topY-6;
-  drawSegs(midX-122,bY,9,7,0); drawSegs(midX+14,bY,9,6,1);
-  ctx.strokeStyle=MC; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(midX-8,bY); ctx.lineTo(midX-8,bY+13); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(midX+8,bY); ctx.lineTo(midX+8,bY+13); ctx.stroke();
-  ctx.fillStyle=MC; ctx.font='9px Courier New'; ctx.textAlign='center'; ctx.fillText('01',midX,bY+11);
-  drawSegs(midX-28,topY+8,3,3,0);
-  for(let i=-3;i<=3;i++){ ctx.globalAlpha=alpha*(i===0?1:0.5); ctx.fillStyle=MC; const sz=i===0?4:3; ctx.fillRect(midX+i*8-sz/2,topY+22,sz,sz); }
-  ctx.globalAlpha=alpha;
-  function xhair(cx,cy){ const s=32; ctx.strokeStyle=MC; ctx.lineWidth=2; ctx.strokeRect(cx-s,cy-s,15,15); ctx.strokeRect(cx+s-15,cy-s,15,15); ctx.strokeRect(cx-s,cy+s-15,15,15); ctx.strokeRect(cx+s-15,cy+s-15,15,15); ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,cy-s+5); ctx.lineTo(cx,cy-s/2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx,cy+s/2); ctx.lineTo(cx,cy+s-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx-s+5,cy); ctx.lineTo(cx-s/2,cy); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+s/2,cy); ctx.lineTo(cx+s-5,cy); ctx.stroke(); }
-  xhair(140,HH/2); xhair(HW-140,HH/2);
-  function scorn(x,y,fx,fy){ ctx.strokeStyle=MC; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y+fy*22); ctx.lineTo(x,y); ctx.lineTo(x+fx*22,y); ctx.stroke(); }
-  scorn(HW*0.18,HH*0.21,1,1); scorn(HW*0.82,HH*0.21,-1,1);
-  scorn(HW*0.18,HH*0.79,1,-1); scorn(HW*0.82,HH*0.79,-1,-1);
-  ctx.globalAlpha=1; ctx.setLineDash([]);
-}
 
-function drawHUD(){
-  ctx.clearRect(0,0,HW,HH);
-  drawCompass(heading);
-  if(abilityAlpha>0.01) drawAbility(abilityAlpha);
-}
-
-// ============================================================
-// WEBGL — fullscreen quad, SAME texture both eyes (head-locked)
-// ============================================================
-const canvas=document.getElementById('glcanvas');
-const gl=canvas.getContext('webgl',{xrCompatible:true,alpha:true,premultipliedAlpha:false});
-
-const vsrc=`attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0,1);}`;
-const fsrc=`precision mediump float;uniform sampler2D t;varying vec2 uv;void main(){gl_FragColor=texture2D(t,uv);}`;
-function mkSh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s;}
-const prog=gl.createProgram();
-gl.attachShader(prog,mkSh(gl.VERTEX_SHADER,vsrc));
-gl.attachShader(prog,mkSh(gl.FRAGMENT_SHADER,fsrc));
-gl.linkProgram(prog);
-const buf=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-const aP=gl.getAttribLocation(prog,'p');
-const tex=gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D,tex);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-
-function uploadAndDraw(fb, x, y, w, h){
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.viewport(x,y,w,h);
-  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-  gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-  gl.enableVertexAttribArray(aP);
-  gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.uniform1i(gl.getUniformLocation(prog,'t'),0);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-}
-
-function uploadHUD(){
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hud2d);
-}
-
-// desktop loop
-let xrSession=null;
-function desktopLoop(){
-  if(xrSession) return;
-  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
-  drawHUD(); uploadHUD();
-  gl.clearColor(0.04,0.04,0.06,1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  uploadAndDraw(null,0,0,canvas.width,canvas.height);
-  requestAnimationFrame(desktopLoop);
-}
-
-// ============================================================
-// AUDIO
-// ============================================================
-let actx=null;
-function initAudio(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();}
-function playAbility(){
-  if(!actx) return; const t=actx.currentTime;
-  [[200,1800,0.28,0,'sine'],[80,40,0.16,0.2,'square'],[2400,2400,0.10,0.1,'sine']].forEach(([f0,f1,g,dl,type])=>{
-    const o=actx.createOscillator(),gn=actx.createGain();
-    o.type=type; o.connect(gn); gn.connect(actx.destination);
-    o.frequency.setValueAtTime(f0,t+dl); o.frequency.exponentialRampToValueAtTime(f1,t+dl+0.35);
-    gn.gain.setValueAtTime(g,t+dl); gn.gain.exponentialRampToValueAtTime(0.001,t+dl+0.6);
-    o.start(t+dl); o.stop(t+dl+0.7);
+  // Tacche orizzontali cornice sinistra
+  [90, HH - 90].forEach(y => {
+    ctx.beginPath(); ctx.moveTo(5, y); ctx.lineTo(32, y); ctx.stroke();
   });
+
+  // Croci pixel cornice sinistra
+  [[46, HH/2 - 34, 0.9], [46, HH/2 + 34, 0.5]].forEach(([x, y, a]) => {
+    ctx.globalAlpha = alpha * a;
+    ctx.fillStyle   = C_MAGENTA;
+    ctx.fillRect(x - 6, y - 2, 12, 4);
+    ctx.fillRect(x - 2, y - 6, 4, 12);
+  });
+
+  // ── Cornice destra ──
+  ctx.globalAlpha = alpha;
+  ctx.setLineDash([8, 5]);
+  ctx.strokeRect(HW - 91, 5, 86, HH - 10);
+  ctx.setLineDash([]);
+
+  [90, HH - 90].forEach(y => {
+    ctx.beginPath(); ctx.moveTo(HW - 5, y); ctx.lineTo(HW - 32, y); ctx.stroke();
+  });
+
+  [[HW - 46, HH/2 - 34, 0.9], [HW - 46, HH/2 + 34, 0.5]].forEach(([x, y, a]) => {
+    ctx.globalAlpha = alpha * a;
+    ctx.fillStyle   = C_MAGENTA;
+    ctx.fillRect(x - 6, y - 2, 12, 4);
+    ctx.fillRect(x - 2, y - 6, 4, 12);
+  });
+
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = C_MAGENTA;
+
+  // ── HUD centrale in alto ──
+  const mx = HW / 2;
+  const ty = 140;
+
+  // Cerchi indicatori sx
+  [mx - 104, mx - 80].forEach(cx => {
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, ty, 10, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, ty,  4, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, ty-10); ctx.lineTo(cx, ty-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+10, ty); ctx.lineTo(cx+6,  ty); ctx.stroke();
+  });
+
+  // Cerchi indicatori dx
+  [mx + 80, mx + 104].forEach(cx => {
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, ty, 10, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, ty,  4, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, ty-10); ctx.lineTo(cx, ty-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-10, ty); ctx.lineTo(cx-6,  ty); ctx.stroke();
+  });
+
+  // Barre segmentate
+  function segs(x, y, n, on, dim) {
+    for(let i = 0; i < n; i++) {
+      const sx = x + i * 19;
+      ctx.strokeStyle = i < on ? C_YELLOW : C_MAGENTA;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx, y, 17, 9);
+      if(i < on) {
+        ctx.fillStyle = C_YELLOW;
+        ctx.fillRect(sx+1, y+1, 15, 7);
+      } else if(i < on + dim) {
+        ctx.fillStyle = 'rgba(255,238,0,0.3)';
+        ctx.fillRect(sx+1, y+1, 15, 7);
+      }
+    }
+  }
+  const by = ty - 7;
+  segs(mx - 124, by, 9, 7, 0);
+  segs(mx + 14,  by, 9, 6, 1);
+
+  // Divisori centrali e label
+  ctx.strokeStyle = C_MAGENTA; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(mx - 8, by); ctx.lineTo(mx - 8, by + 13); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mx + 8, by); ctx.lineTo(mx + 8, by + 13); ctx.stroke();
+  ctx.fillStyle = C_MAGENTA; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('01', mx, by + 11);
+
+  // Segs centrali
+  segs(mx - 28, ty + 7, 3, 3, 0);
+
+  // Fila di punti
+  for(let i = -3; i <= 3; i++) {
+    ctx.globalAlpha = alpha * (i === 0 ? 1 : 0.5);
+    ctx.fillStyle   = C_MAGENTA;
+    const sz = i === 0 ? 4 : 3;
+    ctx.fillRect(mx + i*8 - sz/2, ty + 22, sz, sz);
+  }
+  ctx.globalAlpha = alpha;
+
+  // ── Mirini laterali ──
+  function crosshair(cx, cy) {
+    const s = 30;
+    ctx.strokeStyle = C_MAGENTA; ctx.lineWidth = 2;
+    // Quattro angoli
+    ctx.strokeRect(cx - s,      cy - s,      14, 14);
+    ctx.strokeRect(cx + s - 14, cy - s,      14, 14);
+    ctx.strokeRect(cx - s,      cy + s - 14, 14, 14);
+    ctx.strokeRect(cx + s - 14, cy + s - 14, 14, 14);
+    // Crocette centrali
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx, cy - s + 5); ctx.lineTo(cx, cy - s/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy + s/2);   ctx.lineTo(cx, cy + s - 5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - s + 5, cy); ctx.lineTo(cx - s/2, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + s/2,   cy); ctx.lineTo(cx + s - 5, cy); ctx.stroke();
+  }
+  crosshair(148, HH/2);
+  crosshair(HW - 148, HH/2);
+
+  // ── Angoli di scansione ──
+  function scanCorner(x, y, fx, fy) {
+    ctx.strokeStyle = C_MAGENTA; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y + fy*22);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + fx*22, y);
+    ctx.stroke();
+  }
+  scanCorner(HW*0.17, HH*0.20,  1,  1);
+  scanCorner(HW*0.83, HH*0.20, -1,  1);
+  scanCorner(HW*0.17, HH*0.80,  1, -1);
+  scanCorner(HW*0.83, HH*0.80, -1, -1);
+
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
 }
 
-// ============================================================
-// ABILITY
-// ============================================================
-function toggleAbility(){
-  abilityOn=!abilityOn;
-  document.getElementById('d-a').textContent='ABILITÀ: '+(abilityOn?'ON':'OFF');
-  if(abilityOn) playAbility();
-}
-function stepAlpha(){ abilityAlpha+=(( abilityOn?1:0)-abilityAlpha)*0.1; }
-document.addEventListener('keydown',e=>{if(e.code==='Space'){initAudio();toggleAbility();}});
-
-// ============================================================
-// HAND TRACKING
-// ============================================================
-function jPos(hand,name){
-  try{ return hand.get(name).transform.position; }catch(e){return null;}
-}
-function dist3(a,b){
-  if(!a||!b) return 999;
-  return Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+// ── DEBUG 3D (ancorato come la bussola) ──────────────────
+function drawDebug(lOk, rOk, dist, touching) {
+  const x = 30, y = HH - 80;
+  ctx.fillStyle   = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(x - 6, y - 16, 260, 70);
+  ctx.fillStyle   = C_CYAN;
+  ctx.font        = '11px Courier New';
+  ctx.textAlign   = 'left';
+  ctx.globalAlpha = 0.8;
+  ctx.fillText('MANO SX: ' + (lOk ? 'RILEVATA' : '—'),       x, y);
+  ctx.fillText('MANO DX: ' + (rOk ? 'RILEVATA' : '—'),       x, y + 18);
+  ctx.fillText('DIST:    ' + dist.toFixed(3) + 'm ' + (touching ? '◆ TOCCO' : ''), x, y + 36);
+  ctx.fillStyle   = touching ? C_MAGENTA : C_CYAN;
+  ctx.fillText('ABILITÀ: ' + (abilityOn ? 'ON' : 'OFF'),     x, y + 54);
+  ctx.globalAlpha = 1;
 }
 
-// Palmo destro = media di wrist + index-finger-metacarpal + pinky-finger-metacarpal
-function palmCenter(hand){
-  const w=jPos(hand,'wrist');
-  const a=jPos(hand,'index-finger-metacarpal');
-  const b=jPos(hand,'pinky-finger-metacarpal');
+// ── DRAW FRAME ───────────────────────────────────────────
+let debugL = false, debugR = false, debugDist = 999, debugTouch = false;
+
+function drawFrame() {
+  ctx.clearRect(0, 0, HW, HH);
+  drawCompass(heading);
+  if(abilityAlpha > 0.01) drawAbility(abilityAlpha);
+  drawDebug(debugL, debugR, debugDist, debugTouch);
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER — carica hud canvas come texture e disegna quad
+// ═══════════════════════════════════════════════════════════
+function renderHUD(framebuffer, x, y, w, h) {
+  gl.bindTexture(gl.TEXTURE_2D, hudTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hud);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.viewport(x, y, w, h);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(aPosLoc);
+  gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform1i(uTexLoc, 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+// ═══════════════════════════════════════════════════════════
+// AUDIO
+// ═══════════════════════════════════════════════════════════
+let actx = null;
+function initAudio() {
+  if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playAbilitySound() {
+  if(!actx) return;
+  const t = actx.currentTime;
+  // Sweep ascendente
+  const o1 = actx.createOscillator(), g1 = actx.createGain();
+  o1.connect(g1); g1.connect(actx.destination);
+  o1.frequency.setValueAtTime(200, t);
+  o1.frequency.exponentialRampToValueAtTime(1800, t + 0.3);
+  g1.gain.setValueAtTime(0.3, t);
+  g1.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  o1.start(t); o1.stop(t + 0.5);
+  // Sub
+  const o2 = actx.createOscillator(), g2 = actx.createGain();
+  o2.type = 'square'; o2.connect(g2); g2.connect(actx.destination);
+  o2.frequency.setValueAtTime(80, t + 0.15);
+  o2.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+  g2.gain.setValueAtTime(0.18, t + 0.15);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  o2.start(t + 0.15); o2.stop(t + 0.6);
+  // Ping
+  const o3 = actx.createOscillator(), g3 = actx.createGain();
+  o3.connect(g3); g3.connect(actx.destination);
+  o3.frequency.setValueAtTime(2400, t + 0.05);
+  g3.gain.setValueAtTime(0.12, t + 0.05);
+  g3.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  o3.start(t + 0.05); o3.stop(t + 0.35);
+}
+
+// ═══════════════════════════════════════════════════════════
+// ABILITY TOGGLE
+// ═══════════════════════════════════════════════════════════
+function toggleAbility() {
+  abilityOn = !abilityOn;
+  if(abilityOn) playAbilitySound();
+}
+// Desktop: spazio
+document.addEventListener('keydown', e => {
+  if(e.code === 'Space') { initAudio(); toggleAbility(); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// HAND TRACKING — dito sinistro tocca palmo destro
+// ═══════════════════════════════════════════════════════════
+function getJointPos(hand, name) {
+  try { return hand.get(name).transform.position; }
+  catch(e) { return null; }
+}
+
+function dist3D(a, b) {
+  if(!a || !b) return 999;
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+// Centro del palmo destro: media wrist + index metacarpal
+function getRightPalm(hand) {
+  const w = getJointPos(hand, 'wrist');
+  const m = getJointPos(hand, 'index-finger-metacarpal');
   if(!w) return null;
-  const pts=[w,a,b].filter(Boolean);
-  return { x:pts.reduce((s,p)=>s+p.x,0)/pts.length, y:pts.reduce((s,p)=>s+p.y,0)/pts.length, z:pts.reduce((s,p)=>s+p.z,0)/pts.length };
+  if(!m) return w;
+  return { x:(w.x+m.x)/2, y:(w.y+m.y)/2, z:(w.z+m.z)/2 };
 }
 
-// Dito sinistro tocca palmo destro: controlla TUTTI i joint della mano sinistra
-function leftTouchesRightPalm(lHand, rHand){
-  const pc=palmCenter(rHand);
-  if(!pc) return {hit:false,dist:999};
-  const joints=['wrist','index-finger-tip','index-finger-phalanx-proximal',
-    'middle-finger-tip','middle-finger-phalanx-proximal',
-    'ring-finger-tip','pinky-finger-tip','thumb-tip'];
-  let minD=999;
-  for(const j of joints){
-    const p=jPos(lHand,j);
-    const d=dist3(p,pc);
-    if(d<minD) minD=d;
+// Controlla se QUALSIASI joint della mano sinistra è vicino al palmo destro
+const LEFT_JOINTS = [
+  'wrist',
+  'thumb-tip',
+  'index-finger-tip',
+  'index-finger-phalanx-proximal',
+  'middle-finger-tip',
+  'middle-finger-phalanx-proximal',
+  'ring-finger-tip',
+  'pinky-finger-tip',
+];
+
+function checkTwoHandTouch(leftHand, rightHand) {
+  const palm = getRightPalm(rightHand);
+  if(!palm) return { hit: false, dist: 999 };
+  let minDist = 999;
+  for(const j of LEFT_JOINTS) {
+    const p = getJointPos(leftHand, j);
+    const d = dist3D(p, palm);
+    if(d < minDist) minDist = d;
   }
-  return {hit:minD<0.12, dist:minD};
+  return { hit: minDist < 0.10, dist: minDist };
 }
 
-let touchFrames=0, touchFired=false;
+// Debounce: deve restare in tocco per 3 frame
+let touchFrames  = 0;
+let touchFired   = false;
 
-// ============================================================
-// XR
-// ============================================================
-let xrRefSpace=null, glLayer=null;
+// ═══════════════════════════════════════════════════════════
+// XR SESSION
+// ═══════════════════════════════════════════════════════════
+let xrSession   = null;
+let xrRefSpace  = null;
+let xrGLLayer   = null;
 
-function onXRFrame(t,frame){
-  xrSession.requestAnimationFrame(onXRFrame);
-  stepAlpha();
+function xrFrame(time, frame) {
+  xrSession.requestAnimationFrame(xrFrame);
 
-  const pose=frame.getViewerPose(xrRefSpace);
-  if(pose){
-    const q=pose.transform.orientation;
-    heading=((-Math.atan2(2*(q.w*q.y+q.z*q.x),1-2*(q.y*q.y+q.x*q.x))*180/Math.PI)+360)%360;
+  // Smooth ability alpha
+  abilityAlpha += ((abilityOn ? 1 : 0) - abilityAlpha) * 0.12;
+
+  // Heading dalla testa
+  const pose = frame.getViewerPose(xrRefSpace);
+  if(pose) {
+    const q = pose.transform.orientation;
+    const yaw = Math.atan2(
+      2 * (q.w * q.y + q.z * q.x),
+      1 - 2 * (q.y * q.y + q.x * q.x)
+    );
+    heading = ((-yaw * 180 / Math.PI) + 360) % 360;
   }
 
-  // Collect hands
-  let lHand=null, rHand=null;
-  for(const src of xrSession.inputSources){
+  // Raccogli mani
+  let leftHand = null, rightHand = null;
+  for(const src of xrSession.inputSources) {
     if(!src.hand) continue;
-    if(src.handedness==='left')  lHand=src.hand;
-    if(src.handedness==='right') rHand=src.hand;
+    if(src.handedness === 'left')  leftHand  = src.hand;
+    if(src.handedness === 'right') rightHand = src.hand;
   }
 
-  // Gesture
-  if(lHand && rHand){
-    const {hit,dist}=leftTouchesRightPalm(lHand,rHand);
-    document.getElementById('d-l').textContent='SX: '+(lHand?'OK':'—');
-    document.getElementById('d-r').textContent='DX: '+(rHand?'OK':'—');
-    document.getElementById('d-dist').textContent='DIST: '+dist.toFixed(3)+'m '+(hit?'TOCCO!':'');
-    if(hit){ touchFrames++; if(touchFrames>=2&&!touchFired){touchFired=true;initAudio();toggleAbility();} }
-    else   { touchFrames=0; touchFired=false; }
+  // Gesto: dito sinistro su palmo destro
+  debugL = !!leftHand;
+  debugR = !!rightHand;
+  debugDist = 999;
+  debugTouch = false;
+
+  if(leftHand && rightHand) {
+    const { hit, dist } = checkTwoHandTouch(leftHand, rightHand);
+    debugDist  = dist;
+    debugTouch = hit;
+    if(hit) {
+      touchFrames++;
+      if(touchFrames >= 3 && !touchFired) {
+        touchFired = true;
+        initAudio();
+        toggleAbility();
+      }
+    } else {
+      touchFrames = 0;
+      touchFired  = false;
+    }
   } else {
-    document.getElementById('d-l').textContent='SX: '+(lHand?'OK':'N/A');
-    document.getElementById('d-r').textContent='DX: '+(rHand?'OK':'N/A');
-    touchFrames=0; touchFired=false;
+    touchFrames = 0;
+    touchFired  = false;
   }
 
-  // Draw HUD to 2D canvas then upload
-  drawHUD(); uploadHUD();
+  // Disegna HUD sul canvas 2D
+  drawFrame();
 
-  // Render — one draw call per eye viewport
-  if(pose && glLayer){
-    gl.bindFramebuffer(gl.FRAMEBUFFER,glLayer.framebuffer);
-    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-    for(const view of pose.views){
-      const vp=glLayer.getViewport(view);
-      uploadAndDraw(glLayer.framebuffer,vp.x,vp.y,vp.width,vp.height);
+  // Renderizza su ogni viewport (occhio sinistro + destro)
+  if(pose && xrGLLayer) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, xrGLLayer.framebuffer);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    for(const view of pose.views) {
+      const vp = xrGLLayer.getViewport(view);
+      renderHUD(xrGLLayer.framebuffer, vp.x, vp.y, vp.width, vp.height);
     }
   }
 }
 
-async function startXR(){
+async function startXR() {
   initAudio();
-  const btn=document.getElementById('enterbtn');
-  btn.textContent='AVVIO...'; btn.disabled=true;
-  try{ await gl.makeXRCompatible(); }catch(e){}
-  const tries=[
-    ['immersive-ar',{requiredFeatures:['local'],optionalFeatures:['hand-tracking']}],
-    ['immersive-vr',{requiredFeatures:['local'],optionalFeatures:['hand-tracking']}],
-    ['immersive-vr',{requiredFeatures:['local-floor'],optionalFeatures:['hand-tracking']}],
+  const btn = document.getElementById('enterbtn');
+  btn.textContent = 'AVVIO...';
+  btn.disabled = true;
+
+  try { await gl.makeXRCompatible(); } catch(e) {}
+
+  const attempts = [
+    ['immersive-ar', { requiredFeatures:['local'], optionalFeatures:['hand-tracking'] }],
+    ['immersive-vr', { requiredFeatures:['local'], optionalFeatures:['hand-tracking'] }],
+    ['immersive-vr', { requiredFeatures:['local-floor'], optionalFeatures:['hand-tracking'] }],
   ];
-  for(const [mode,opts] of tries){
-    try{
-      if(!await navigator.xr.isSessionSupported(mode).catch(()=>false)) continue;
-      xrSession=await navigator.xr.requestSession(mode,opts);
-      glLayer=new XRWebGLLayer(xrSession,gl);
-      await xrSession.updateRenderState({baseLayer:glLayer});
-      xrRefSpace=await xrSession.requestReferenceSpace(opts.requiredFeatures.includes('local-floor')?'local-floor':'local');
-      xrSession.addEventListener('end',()=>{ xrSession=null; glLayer=null; btn.textContent='ENTRA IN VR'; btn.disabled=false; btn.style.display='block'; desktopLoop(); });
-      xrSession.requestAnimationFrame(onXRFrame);
-      btn.style.display='none';
-      document.getElementById('dbg').style.display='block';
+
+  for(const [mode, opts] of attempts) {
+    try {
+      const ok = await navigator.xr.isSessionSupported(mode).catch(() => false);
+      if(!ok) continue;
+
+      xrSession = await navigator.xr.requestSession(mode, opts);
+      xrGLLayer = new XRWebGLLayer(xrSession, gl);
+      await xrSession.updateRenderState({ baseLayer: xrGLLayer });
+
+      const rsType = opts.requiredFeatures.includes('local-floor') ? 'local-floor' : 'local';
+      xrRefSpace = await xrSession.requestReferenceSpace(rsType);
+
+      xrSession.addEventListener('end', () => {
+        xrSession = null; xrGLLayer = null; xrRefSpace = null;
+        btn.textContent = 'ENTRA IN VR';
+        btn.disabled = false;
+        btn.style.display = 'block';
+        desktopLoop();
+      });
+
+      xrSession.requestAnimationFrame(xrFrame);
+      btn.style.display = 'none';
       return;
-    }catch(e){ continue; }
+
+    } catch(e) { continue; }
   }
-  btn.textContent='ENTRA IN VR'; btn.disabled=false;
-  document.getElementById('dbg').style.display='block';
-  document.getElementById('d-dist').textContent='XR fallito';
+
+  btn.textContent = 'ERRORE — riprova';
+  btn.disabled = false;
 }
 
-window.addEventListener('load',()=>{
+// ═══════════════════════════════════════════════════════════
+// DESKTOP PREVIEW
+// ═══════════════════════════════════════════════════════════
+function desktopLoop() {
+  if(xrSession) return;
+  abilityAlpha += ((abilityOn ? 1 : 0) - abilityAlpha) * 0.12;
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  drawFrame();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.04, 0.04, 0.06, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  renderHUD(null, 0, 0, canvas.width, canvas.height);
+  requestAnimationFrame(desktopLoop);
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
   desktopLoop();
-  setTimeout(()=>{
-    const boot=document.getElementById('boot');
-    boot.style.opacity='0';
-    setTimeout(()=>boot.style.display='none',800);
-    const btn=document.getElementById('enterbtn');
-    btn.style.display='block';
-    if(!navigator.xr){ btn.textContent='WebXR NON DISPONIBILE'; btn.disabled=true; }
-    else btn.addEventListener('click',startXR);
-  },5300);
+  setTimeout(() => {
+    const boot = document.getElementById('boot');
+    boot.style.opacity = '0';
+    setTimeout(() => boot.style.display = 'none', 800);
+    const btn = document.getElementById('enterbtn');
+    btn.style.display = 'block';
+    if(!navigator.xr) {
+      btn.textContent = 'WebXR NON DISPONIBILE';
+      btn.disabled = true;
+    } else {
+      btn.addEventListener('click', startXR);
+    }
+  }, 5200);
 });
 </script>
 </body>
