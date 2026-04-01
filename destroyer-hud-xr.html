@@ -1,1045 +1,818 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Destroyer VR HUD</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marathon — Destroyer Helmet</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{
-  width:100%;
-  height:100%;
-  overflow:hidden;
-  background:#000;
-  font-family:Arial,Helvetica,sans-serif;
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+canvas { display: block; }
+
+#boot-screen {
+  position: fixed; inset: 0;
+  background: #000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 9999;
+  color: #ff2afc;
 }
-body{
-  display:flex;
-  align-items:center;
-  justify-content:center;
+.boot-logo {
+  font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+  color: #00e8ff; margin-bottom: 30px; opacity: 0;
+  animation: fadeIn 0.5s 0.5s forwards;
 }
-#ui{
-  position:fixed;
-  inset:0;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:14px;
-  z-index:10;
+.boot-title {
+  font-size: 28px; letter-spacing: 8px; text-transform: uppercase;
+  color: #ff2afc; margin-bottom: 50px; opacity: 0;
+  animation: fadeIn 0.5s 1s forwards;
 }
-#btn{
-  padding:16px 40px;
-  border:2px solid #ff2d9b;
-  background:transparent;
-  color:#ff2d9b;
-  font-weight:700;
-  letter-spacing:.18em;
-  text-transform:uppercase;
-  cursor:pointer;
+.boot-lines { width: 300px; }
+.boot-line {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 10px; letter-spacing: 2px; margin-bottom: 8px;
+  opacity: 0; color: #00e8ff;
 }
-#sub{
-  color:rgba(255,255,255,.55);
-  text-align:center;
-  line-height:1.65;
-  font-size:13px;
+.boot-line:nth-child(1) { animation: fadeIn 0.3s 1.5s forwards; }
+.boot-line:nth-child(2) { animation: fadeIn 0.3s 1.9s forwards; }
+.boot-line:nth-child(3) { animation: fadeIn 0.3s 2.3s forwards; }
+.boot-line:nth-child(4) { animation: fadeIn 0.3s 2.7s forwards; }
+.boot-line:nth-child(5) { animation: fadeIn 0.3s 3.1s forwards; }
+.boot-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ff2afc; flex-shrink: 0;
 }
-#err{
-  display:none;
-  color:#ff6b6b;
-  text-align:center;
-  max-width:380px;
-  font-size:13px;
+.boot-bar-wrap { width: 300px; height: 2px; background: #1a001a; margin-top: 40px; opacity: 0; animation: fadeIn 0.3s 3.2s forwards; }
+.boot-bar { height: 100%; width: 0; background: #ff2afc; animation: loadBar 1s 3.4s forwards; }
+.boot-ready { font-size: 11px; letter-spacing: 4px; color: #ff2afc; margin-top: 20px; opacity: 0; animation: fadeIn 0.5s 4.6s forwards; }
+
+@keyframes fadeIn { to { opacity: 1; } }
+@keyframes loadBar { to { width: 100%; } }
+@keyframes bootOut { to { opacity: 0; pointer-events: none; } }
+
+#app {
+  position: fixed; inset: 0;
+  opacity: 0;
+  transition: opacity 0.8s;
 }
-canvas{
-  position:fixed;
-  inset:0;
-  width:100%;
-  height:100%;
-  display:none;
+#app.visible { opacity: 1; }
+
+#canvas-bg { position: absolute; inset: 0; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
+
+/* ===== COMPASS ===== */
+#compass {
+  position: absolute;
+  top: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px;
+}
+.compass-bar {
+  display: flex; align-items: center;
+  height: 28px; overflow: hidden;
+  position: relative;
+}
+.compass-track {
+  display: flex; align-items: center; gap: 0;
+  white-space: nowrap;
+  transition: transform 0.1s linear;
+}
+.compass-tick {
+  display: flex; flex-direction: column; align-items: center;
+  width: 20px;
+}
+.compass-tick.major .tick-label {
+  font-size: 11px; letter-spacing: 1px; color: #00e8ff;
+  font-weight: bold;
+}
+.compass-tick.minor .tick-label { visibility: hidden; }
+.tick-line { width: 1px; background: #00e8ff; opacity: 0.5; }
+.compass-tick.major .tick-line { height: 8px; opacity: 1; }
+.compass-tick.minor .tick-line { height: 4px; }
+.compass-center-marker {
+  position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+  width: 1px; height: 100%; background: #ff2afc;
+  pointer-events: none;
+}
+.compass-heading {
+  font-size: 13px; color: #ff2afc; letter-spacing: 3px;
+}
+.compass-degree {
+  font-size: 10px; color: #00e8ff; letter-spacing: 2px; opacity: 0.8;
+}
+#compass-notch {
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #ff2afc;
+  margin-top: -2px;
+}
+
+/* ===== ABILITY OVERLAY ===== */
+#ability-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#ability-overlay.active { opacity: 1; }
+
+.ability-tint {
+  position: absolute; inset: 0;
+  background: rgba(255, 30, 200, 0.08);
+}
+
+/* Side frames */
+.frame-left, .frame-right {
+  position: absolute; top: 15%; bottom: 15%; width: 90px;
+}
+.frame-left { left: 20px; }
+.frame-right { right: 20px; }
+
+/* Center top bar */
+.center-top {
+  position: absolute; top: 18%; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.center-bars {
+  display: flex; align-items: center; gap: 4px;
+}
+.seg-bar {
+  display: flex; gap: 2px;
+}
+.seg { width: 18px; height: 10px; border: 1px solid #ff2afc; }
+.seg.active { background: #ffee00; border-color: #ffee00; }
+.seg.half { background: rgba(255,238,0,0.4); border-color: #ffee00; }
+.center-divider {
+  width: 2px; height: 14px;
+  background: #ff2afc; margin: 0 4px;
+}
+.run-label {
+  font-size: 9px; color: #ff2afc; letter-spacing: 3px;
+}
+
+/* Crosshairs side */
+.crosshair-left, .crosshair-right {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 60px; height: 60px;
+}
+.crosshair-left { left: 100px; }
+.crosshair-right { right: 100px; }
+
+/* Circle indicators */
+.circle-group {
+  position: absolute; top: 28%; display: flex; gap: 30px;
+}
+.circle-group.left-group { left: 80px; }
+.circle-group.right-group { right: 80px; }
+
+/* Scan grid corners */
+.scan-corner {
+  position: absolute; width: 40px; height: 40px;
+}
+.scan-corner.tl { top: 22%; left: 18%; }
+.scan-corner.tr { top: 22%; right: 18%; }
+.scan-corner.bl { bottom: 22%; left: 18%; }
+.scan-corner.br { bottom: 22%; right: 18%; }
+
+/* Enemy detection box */
+.enemy-box {
+  position: absolute;
+  border: 2px solid #ff2222;
+  box-shadow: 0 0 0 1px rgba(255,34,34,0.3);
+  pointer-events: none;
+  display: none;
+}
+.enemy-box.visible { display: block; }
+.enemy-box::before, .enemy-box::after {
+  content: '';
+  position: absolute;
+  width: 8px; height: 8px;
+}
+.enemy-label {
+  position: absolute; top: -18px; left: 0;
+  font-size: 9px; color: #ff2222; letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* Scan lines effect */
+.scanlines {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 30, 200, 0.015) 2px,
+    rgba(255, 30, 200, 0.015) 4px
+  );
+}
+
+/* VR not available fallback */
+#novr {
+  position: fixed; inset: 0;
+  background: #000;
+  color: #ff2afc;
+  display: none;
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  padding: 40px;
+}
+#novr h1 { font-size: 20px; letter-spacing: 4px; margin-bottom: 20px; color: #00e8ff; }
+#novr p { font-size: 12px; letter-spacing: 2px; line-height: 2; color: #ff2afc; max-width: 400px; }
+#novr .url { font-size: 14px; color: #fff; margin-top: 20px; letter-spacing: 1px; }
+
+#xr-button {
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: transparent;
+  border: 1px solid #ff2afc;
+  color: #ff2afc;
+  font-family: 'Courier New', monospace;
+  font-size: 12px; letter-spacing: 3px;
+  padding: 12px 30px;
+  cursor: pointer;
+  display: none;
+  z-index: 100;
+}
+#xr-button:hover { background: rgba(255,42,252,0.1); }
+
+#gesture-debug {
+  position: fixed; bottom: 20px; right: 20px;
+  color: rgba(0,232,255,0.4);
+  font-size: 9px; letter-spacing: 1px;
+  z-index: 100;
+  text-align: right;
+  line-height: 1.8;
 }
 </style>
 </head>
 <body>
 
-<div id="ui">
-  <button id="btn" onclick="startAR()">Enter AR</button>
-  <div id="sub">
-    Quest 3 · immersive-ar · hand tracking<br>
-    Tocca il palmo destro con l'indice sinistro
+<!-- BOOT SCREEN -->
+<div id="boot-screen">
+  <div class="boot-logo">BUNGIE // MARATHON SYSTEMS</div>
+  <div class="boot-title">DESTROYER</div>
+  <div class="boot-lines">
+    <div class="boot-line"><div class="boot-dot"></div> NEURAL LINK............OK</div>
+    <div class="boot-line"><div class="boot-dot"></div> SHIELD ARRAY...........OK</div>
+    <div class="boot-line"><div class="boot-dot"></div> SENSOR SUITE...........OK</div>
+    <div class="boot-line"><div class="boot-dot"></div> HAND TRACKING..........OK</div>
+    <div class="boot-line"><div class="boot-dot"></div> HUD CALIBRATING.......</div>
   </div>
-  <div id="err"></div>
+  <div class="boot-bar-wrap"><div class="boot-bar"></div></div>
+  <div class="boot-ready">SYSTEM READY</div>
 </div>
 
-<canvas id="c"></canvas>
+<!-- MAIN APP -->
+<div id="app">
+  <canvas id="canvas-bg"></canvas>
 
+  <div id="hud">
+    <!-- COMPASS -->
+    <div id="compass">
+      <div class="compass-bar" id="compass-bar" style="width:260px;">
+        <div class="compass-track" id="compass-track"></div>
+        <div class="compass-center-marker"></div>
+      </div>
+      <div id="compass-notch"></div>
+      <div class="compass-heading" id="heading-label">E</div>
+      <div class="compass-degree" id="degree-label">090°</div>
+    </div>
+
+    <!-- ABILITY OVERLAY -->
+    <div id="ability-overlay">
+      <div class="ability-tint"></div>
+      <div class="scanlines"></div>
+
+      <!-- Side frames SVG left -->
+      <div class="frame-left">
+        <svg width="90" height="100%" viewBox="0 0 90 500" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="80" height="496" stroke="#ff2afc" stroke-width="1.5" stroke-dasharray="8 4" opacity="0.7"/>
+          <line x1="2" y1="80" x2="30" y2="80" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="2" y1="420" x2="30" y2="420" stroke="#ff2afc" stroke-width="1.5"/>
+          <rect x="8" y="8" width="20" height="20" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+          <rect x="8" y="472" width="20" height="20" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+          <!-- Pixel cross decorations -->
+          <rect x="15" y="230" width="12" height="4" fill="#ff2afc" opacity="0.8"/>
+          <rect x="19" y="226" width="4" height="12" fill="#ff2afc" opacity="0.8"/>
+          <rect x="15" y="260" width="12" height="4" fill="#ff2afc" opacity="0.5"/>
+          <rect x="19" y="256" width="4" height="12" fill="#ff2afc" opacity="0.5"/>
+          <!-- Small dots -->
+          <circle cx="45" cy="150" r="2" fill="#ff2afc" opacity="0.4"/>
+          <circle cx="45" cy="350" r="2" fill="#ff2afc" opacity="0.4"/>
+        </svg>
+      </div>
+
+      <!-- Side frames SVG right -->
+      <div class="frame-right">
+        <svg width="90" height="100%" viewBox="0 0 90 500" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="8" y="2" width="80" height="496" stroke="#ff2afc" stroke-width="1.5" stroke-dasharray="8 4" opacity="0.7"/>
+          <line x1="88" y1="80" x2="60" y2="80" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="88" y1="420" x2="60" y2="420" stroke="#ff2afc" stroke-width="1.5"/>
+          <rect x="62" y="8" width="20" height="20" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+          <rect x="62" y="472" width="20" height="20" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+          <rect x="63" y="230" width="12" height="4" fill="#ff2afc" opacity="0.8"/>
+          <rect x="67" y="226" width="4" height="12" fill="#ff2afc" opacity="0.8"/>
+          <rect x="63" y="260" width="12" height="4" fill="#ff2afc" opacity="0.5"/>
+          <rect x="67" y="256" width="4" height="12" fill="#ff2afc" opacity="0.5"/>
+          <circle cx="45" cy="150" r="2" fill="#ff2afc" opacity="0.4"/>
+          <circle cx="45" cy="350" r="2" fill="#ff2afc" opacity="0.4"/>
+        </svg>
+      </div>
+
+      <!-- Center top HUD elements -->
+      <div class="center-top">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <!-- Circle icons left -->
+          <svg width="70" height="24" viewBox="0 0 70 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="12" cy="12" r="5" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+            <line x1="12" y1="2" x2="12" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+            <line x1="22" y1="12" x2="18" y2="12" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="42" cy="12" r="10" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="42" cy="12" r="5" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+            <line x1="42" y1="2" x2="42" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+            <line x1="52" y1="12" x2="48" y2="12" stroke="#ff2afc" stroke-width="1.5"/>
+          </svg>
+
+          <!-- Status bar center -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="seg-bar" id="bar-left"></div>
+              <div class="center-divider"></div>
+              <span style="font-size:9px;color:#ff2afc;letter-spacing:2px;">01</span>
+              <div class="center-divider"></div>
+              <div class="seg-bar" id="bar-right"></div>
+            </div>
+            <div style="display:flex;gap:3px;" id="bar-center"></div>
+          </div>
+
+          <!-- Circle icons right -->
+          <svg width="70" height="24" viewBox="0 0 70 24" fill="none">
+            <circle cx="28" cy="12" r="10" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="28" cy="12" r="5" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+            <line x1="28" y1="2" x2="28" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+            <line x1="18" y1="12" x2="22" y2="12" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="58" cy="12" r="10" stroke="#ff2afc" stroke-width="1.5"/>
+            <circle cx="58" cy="12" r="5" stroke="#ff2afc" stroke-width="1" opacity="0.5"/>
+            <line x1="58" y1="2" x2="58" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+            <line x1="48" y1="12" x2="52" y2="12" stroke="#ff2afc" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <!-- Dot row -->
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+          <div style="width:4px;height:4px;background:#ff2afc;"></div>
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+          <div style="width:3px;height:3px;background:#ff2afc;opacity:0.5;"></div>
+        </div>
+      </div>
+
+      <!-- Crosshairs left -->
+      <div class="crosshair-left">
+        <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+          <rect x="1" y="1" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="43" y="1" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="1" y="43" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="43" y="43" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <line x1="30" y1="10" x2="30" y2="20" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="30" y1="40" x2="30" y2="50" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="10" y1="30" x2="20" y2="30" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="40" y1="30" x2="50" y2="30" stroke="#ff2afc" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <!-- Crosshairs right -->
+      <div class="crosshair-right">
+        <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+          <rect x="1" y="1" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="43" y="1" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="1" y="43" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <rect x="43" y="43" width="16" height="16" stroke="#ff2afc" stroke-width="2"/>
+          <line x1="30" y1="10" x2="30" y2="20" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="30" y1="40" x2="30" y2="50" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="10" y1="30" x2="20" y2="30" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="40" y1="30" x2="50" y2="30" stroke="#ff2afc" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <!-- Scan corners -->
+      <div class="scan-corner tl">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <path d="M2 20 L2 2 L20 2" stroke="#ff2afc" stroke-width="2"/>
+          <circle cx="4" cy="4" r="2" fill="#ff2afc" opacity="0.5"/>
+        </svg>
+      </div>
+      <div class="scan-corner tr">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <path d="M38 20 L38 2 L20 2" stroke="#ff2afc" stroke-width="2"/>
+          <circle cx="36" cy="4" r="2" fill="#ff2afc" opacity="0.5"/>
+        </svg>
+      </div>
+      <div class="scan-corner bl">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <path d="M2 20 L2 38 L20 38" stroke="#ff2afc" stroke-width="2"/>
+          <circle cx="4" cy="36" r="2" fill="#ff2afc" opacity="0.5"/>
+        </svg>
+      </div>
+      <div class="scan-corner br">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <path d="M38 20 L38 38 L20 38" stroke="#ff2afc" stroke-width="2"/>
+          <circle cx="36" cy="36" r="2" fill="#ff2afc" opacity="0.5"/>
+        </svg>
+      </div>
+
+      <!-- Enemy detection box -->
+      <div class="enemy-box" id="enemy-box">
+        <div class="enemy-label">NEMICO</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gesture debug info -->
+  <div id="gesture-debug">
+    <div id="dbg-left">MANO SX: —</div>
+    <div id="dbg-right">MANO DX: —</div>
+    <div id="dbg-ability">ABILITÀ: OFF</div>
+  </div>
+</div>
+
+<!-- No VR fallback -->
+<div id="novr">
+  <h1>DESTROYER HELMET</h1>
+  <p>APRI QUESTO FILE NEL BROWSER DEL QUEST 3<br>
+  OPPURE VIA SIDEQUEST / ADB<br><br>
+  HAND TRACKING RICHIESTO<br>
+  QUEST 3 — WEBXR IMMERSIVE-AR</p>
+  <div class="url">Trasferisci il file sul Quest e aprilo con il browser Meta</div>
+</div>
+
+<button id="xr-button">ENTRA IN VR</button>
+
+<!-- Audio context sounds -->
 <script>
-/* =========================================================
-   CONFIG
-========================================================= */
-const ABILITY_DURATION = 20.0;
-const END_FADE_DURATION = 1.0;
-const TOUCH_DIST = 0.06;
-const COOLDOWN_TOUCH = 1.5;
+// ===== AUDIO =====
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
 
-const HUD_DISTANCE = -1.18;
-const HUD_WIDTH    = 2.45;
-const HUD_HEIGHT   = 1.35;
-const HUD_Y_OFFSET = 0.04;
+function initAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+}
 
-/* palm button */
-const PALM_BTN_SIZE = 0.028;
-const PALM_BTN_DIST = 0.018;
+function playAbilitySound() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  
+  // Sweep up
+  const osc1 = audioCtx.createOscillator();
+  const gain1 = audioCtx.createGain();
+  osc1.connect(gain1); gain1.connect(audioCtx.destination);
+  osc1.frequency.setValueAtTime(200, t);
+  osc1.frequency.exponentialRampToValueAtTime(1800, t + 0.3);
+  gain1.gain.setValueAtTime(0.3, t);
+  gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  osc1.start(t); osc1.stop(t + 0.5);
 
-/* =========================================================
-   STATE
-========================================================= */
-const S = {
-  heading: 0,
-  rawViewerHeading: 0,
-  hudVisible: false,
-  remain: 0,
-  fadeOut: 0,
-  ending: false,
-  touchCool: 0,
-  wasTouching: false,
-  intro: 0,
-  pulse: 0,
+  // Sub pulse
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'square';
+  osc2.connect(gain2); gain2.connect(audioCtx.destination);
+  osc2.frequency.setValueAtTime(80, t + 0.2);
+  osc2.frequency.exponentialRampToValueAtTime(40, t + 0.6);
+  gain2.gain.setValueAtTime(0.2, t + 0.2);
+  gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  osc2.start(t + 0.2); osc2.stop(t + 0.7);
+  
+  // High ping
+  const osc3 = audioCtx.createOscillator();
+  const gain3 = audioCtx.createGain();
+  osc3.connect(gain3); gain3.connect(audioCtx.destination);
+  osc3.frequency.setValueAtTime(2400, t + 0.1);
+  gain3.gain.setValueAtTime(0.15, t + 0.1);
+  gain3.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  osc3.start(t + 0.1); osc3.stop(t + 0.4);
+}
 
-  hasTrueNorth: false,
-  trueNorthHeading: 0,
-  baselineYaw: null
-};
+function playTouchSound() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(1200, t);
+  osc.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  osc.start(t); osc.stop(t + 0.2);
+}
 
-/* =========================================================
-   XR
-========================================================= */
-let session, gl, refSpace, handL, handR;
-const canvas = document.getElementById('c');
+// ===== COMPASS =====
+const COMPASS_POINTS = [
+  { deg: 0,   label: 'N' },   { deg: 22,  label: '' },
+  { deg: 45,  label: 'NE' },  { deg: 67,  label: '' },
+  { deg: 90,  label: 'E' },   { deg: 112, label: '' },
+  { deg: 135, label: 'SE' },  { deg: 157, label: '' },
+  { deg: 180, label: 'S' },   { deg: 202, label: '' },
+  { deg: 225, label: 'SO' },  { deg: 247, label: '' },
+  { deg: 270, label: 'O' },   { deg: 292, label: '' },
+  { deg: 315, label: 'NO' },  { deg: 337, label: '' },
+  { deg: 360, label: 'N' },   { deg: 382, label: '' },
+  { deg: 405, label: 'NE' },  { deg: 427, label: '' },
+  { deg: 450, label: 'E' },
+];
 
-async function startAR(){
-  hideErr();
+const TICK_WIDTH = 20;
+const TRACK_TOTAL = COMPASS_POINTS.length * TICK_WIDTH;
+const COMPASS_WIDTH = 260;
 
-  await initCompassSensor();
+const track = document.getElementById('compass-track');
+COMPASS_POINTS.forEach(p => {
+  const tick = document.createElement('div');
+  const isMajor = p.label !== '';
+  tick.className = 'compass-tick ' + (isMajor ? 'major' : 'minor');
+  tick.innerHTML = `<span class="tick-label">${p.label}</span><div class="tick-line"></div>`;
+  track.appendChild(tick);
+});
 
-  if(!navigator.xr){
-    showErr('WebXR non disponibile. Apri il file nel Meta Browser su Quest 3.');
+let compassHeading = 90;
+
+function getHeadingLabel(deg) {
+  deg = ((deg % 360) + 360) % 360;
+  if (deg < 22) return 'N';
+  if (deg < 67) return 'NE';
+  if (deg < 112) return 'E';
+  if (deg < 157) return 'SE';
+  if (deg < 202) return 'S';
+  if (deg < 247) return 'SO';
+  if (deg < 292) return 'O';
+  if (deg < 337) return 'NO';
+  return 'N';
+}
+
+function updateCompass(heading) {
+  heading = ((heading % 360) + 360) % 360;
+  compassHeading = heading;
+  const pxPerDeg = (TRACK_TOTAL / 720);
+  const offset = -(heading * pxPerDeg * 2) + COMPASS_WIDTH / 2 - TICK_WIDTH / 2;
+  track.style.transform = `translateX(${offset}px)`;
+  document.getElementById('heading-label').textContent = getHeadingLabel(heading);
+  document.getElementById('degree-label').textContent = Math.round(heading).toString().padStart(3, '0') + '°';
+}
+
+// Simulate compass with mouse/gyro
+let simHeading = 90;
+updateCompass(simHeading);
+
+// Desktop: mouse X to simulate heading
+document.addEventListener('mousemove', e => {
+  if (!xrSession) {
+    simHeading = (e.clientX / window.innerWidth) * 360;
+    updateCompass(simHeading);
+  }
+});
+
+// ===== BARS INIT =====
+const barLeft = document.getElementById('bar-left');
+const barRight = document.getElementById('bar-right');
+const barCenter = document.getElementById('bar-center');
+
+[...Array(9)].forEach((_, i) => {
+  const s = document.createElement('div');
+  s.className = 'seg ' + (i < 7 ? 'active' : '');
+  barLeft.appendChild(s);
+});
+[...Array(9)].forEach((_, i) => {
+  const s = document.createElement('div');
+  s.className = 'seg ' + (i < 6 ? 'active' : 'half');
+  barRight.appendChild(s);
+});
+[...Array(3)].forEach((_, i) => {
+  const s = document.createElement('div');
+  s.className = 'seg active';
+  s.style.width = '18px'; s.style.height = '10px';
+  barCenter.appendChild(s);
+});
+
+// ===== ABILITY STATE =====
+let abilityActive = false;
+const abilityOverlay = document.getElementById('ability-overlay');
+
+function toggleAbility() {
+  abilityActive = !abilityActive;
+  abilityOverlay.classList.toggle('active', abilityActive);
+  document.getElementById('dbg-ability').textContent = 'ABILITÀ: ' + (abilityActive ? 'ON' : 'OFF');
+  if (abilityActive) playAbilitySound();
+}
+
+// Desktop fallback: spacebar
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { initAudio(); toggleAbility(); }
+});
+
+// ===== ENEMY BOX (TensorFlow detection or simulation) =====
+let tfReady = false;
+let detector = null;
+const enemyBox = document.getElementById('enemy-box');
+
+async function loadDetector() {
+  if (typeof poseDetection !== 'undefined') {
+    try {
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+      tfReady = true;
+    } catch(e) { console.warn('Pose detector init failed', e); }
+  }
+}
+
+let videoEl = null;
+
+async function startPoseDetection() {
+  if (!tfReady || !detector) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    videoEl = document.createElement('video');
+    videoEl.srcObject = stream;
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.width = 640; videoEl.height = 480;
+    document.body.appendChild(videoEl);
+    videoEl.style.display = 'none';
+    videoEl.onloadeddata = runPoseLoop;
+  } catch(e) { console.warn('Camera access failed', e); }
+}
+
+async function runPoseLoop() {
+  if (!videoEl || !detector || !abilityActive) {
+    enemyBox.classList.remove('visible');
+    requestAnimationFrame(runPoseLoop);
     return;
   }
+  try {
+    const poses = await detector.estimatePoses(videoEl);
+    if (poses.length > 0 && abilityActive) {
+      const kps = poses[0].keypoints.filter(k => k.score > 0.3);
+      if (kps.length > 3) {
+        const xs = kps.map(k => k.x); const ys = kps.map(k => k.y);
+        const minX = Math.min(...xs); const maxX = Math.max(...xs);
+        const minY = Math.min(...ys); const maxY = Math.max(...ys);
+        const scaleX = window.innerWidth / 640;
+        const scaleY = window.innerHeight / 480;
+        const pad = 20;
+        enemyBox.style.left = (minX * scaleX - pad) + 'px';
+        enemyBox.style.top = (minY * scaleY - pad) + 'px';
+        enemyBox.style.width = ((maxX - minX) * scaleX + pad * 2) + 'px';
+        enemyBox.style.height = ((maxY - minY) * scaleY + pad * 2) + 'px';
+        enemyBox.classList.add('visible');
+      } else {
+        enemyBox.classList.remove('visible');
+      }
+    } else {
+      enemyBox.classList.remove('visible');
+    }
+  } catch(e) {}
+  requestAnimationFrame(runPoseLoop);
+}
 
-  const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
-  if(!supported){
-    showErr('immersive-ar non supportato.');
-    return;
+// ===== WEBXR / HAND TRACKING =====
+let xrSession = null;
+let xrRefSpace = null;
+let leftFistPrev = false;
+let rightTouchPrev = false;
+
+function isHandFist(hand) {
+  if (!hand) return false;
+  try {
+    const wrist = hand.get('wrist');
+    const tips = ['index-finger-tip','middle-finger-tip','ring-finger-tip','pinky-finger-tip'];
+    const mcps = ['index-finger-metacarpal','middle-finger-metacarpal','ring-finger-metacarpal','pinky-finger-metacarpal'];
+    let fistCount = 0;
+    for (let i = 0; i < tips.length; i++) {
+      const tip = hand.get(tips[i]);
+      const mcp = hand.get(mcps[i]);
+      if (!tip || !mcp) continue;
+      const dx = tip.transform.position.x - mcp.transform.position.x;
+      const dy = tip.transform.position.y - mcp.transform.position.y;
+      const dz = tip.transform.position.z - mcp.transform.position.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      if (dist < 0.06) fistCount++;
+    }
+    return fistCount >= 3;
+  } catch(e) { return false; }
+}
+
+function isHandTouch(hand) {
+  if (!hand) return false;
+  try {
+    const thumbTip = hand.get('thumb-tip');
+    const indexTip = hand.get('index-finger-tip');
+    if (!thumbTip || !indexTip) return false;
+    const dx = thumbTip.transform.position.x - indexTip.transform.position.x;
+    const dy = thumbTip.transform.position.y - indexTip.transform.position.y;
+    const dz = thumbTip.transform.position.z - indexTip.transform.position.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    return dist < 0.025;
+  } catch(e) { return false; }
+}
+
+function onXRFrame(time, frame) {
+  xrSession.requestAnimationFrame(onXRFrame);
+  const pose = frame.getViewerPose(xrRefSpace);
+  if (!pose) return;
+
+  // Compass from headset orientation
+  const q = pose.transform.orientation;
+  const yaw = Math.atan2(2*(q.w*q.y + q.z*q.x), 1 - 2*(q.y*q.y + q.x*q.x));
+  const headingDeg = ((-yaw * 180 / Math.PI) + 360) % 360;
+  updateCompass(headingDeg);
+
+  // Hand tracking
+  for (const inputSource of xrSession.inputSources) {
+    if (!inputSource.hand) continue;
+    const isLeft = inputSource.handedness === 'left';
+    const isRight = inputSource.handedness === 'right';
+
+    if (isLeft) {
+      const fist = isHandFist(inputSource.hand);
+      document.getElementById('dbg-left').textContent = 'MANO SX: ' + (fist ? 'PUGNO' : 'aperta');
+      // Reserved for future shield
+      leftFistPrev = fist;
+    }
+
+    if (isRight) {
+      const touch = isHandTouch(inputSource.hand);
+      document.getElementById('dbg-right').textContent = 'MANO DX: ' + (touch ? 'TOCCO' : 'aperta');
+      if (touch && !rightTouchPrev) {
+        initAudio();
+        toggleAbility();
+        playTouchSound();
+      }
+      rightTouchPrev = touch;
+    }
   }
+}
 
-  try{
-    session = await navigator.xr.requestSession('immersive-ar',{
-      requiredFeatures:['local','hand-tracking']
+async function startXR() {
+  initAudio();
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hand-tracking', 'local'],
+      optionalFeatures: ['bounded-floor', 'dom-overlay'],
+      domOverlay: { root: document.getElementById('hud') }
     });
-  }catch(e){
-    try{
-      session = await navigator.xr.requestSession('immersive-ar',{
-        requiredFeatures:['local']
-      });
-    }catch(e2){
-      showErr('Errore sessione XR: ' + e2.message);
-      return;
+    xrSession.addEventListener('end', () => { xrSession = null; xrRefSpace = null; });
+    xrRefSpace = await xrSession.requestReferenceSpace('local');
+    xrSession.requestAnimationFrame(onXRFrame);
+    document.getElementById('xr-button').style.display = 'none';
+    document.getElementById('gesture-debug').style.display = 'block';
+    await loadDetector();
+    await startPoseDetection();
+  } catch(e) {
+    alert('Errore XR: ' + e.message + '\nAssicurati di aprire il file sul Quest 3 con hand tracking attivo.');
+  }
+}
+
+// ===== BOOT SEQUENCE =====
+window.addEventListener('load', async () => {
+  // Build boot then reveal
+  setTimeout(() => {
+    document.getElementById('boot-screen').style.animation = 'bootOut 0.8s 5.2s forwards';
+    document.getElementById('app').style.opacity = '1';
+    document.getElementById('app').classList.add('visible');
+  }, 5000);
+
+  // Check XR support
+  if (navigator.xr) {
+    const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+    const vrSupported = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+    if (arSupported || vrSupported) {
+      document.getElementById('xr-button').style.display = 'block';
+      document.getElementById('xr-button').addEventListener('click', startXR);
+    } else {
+      document.getElementById('novr').style.display = 'flex';
     }
+  } else {
+    document.getElementById('novr').style.display = 'flex';
   }
 
-  document.getElementById('ui').style.display='none';
-  canvas.style.display='block';
-
-  gl = canvas.getContext('webgl2',{
-    xrCompatible:true,
-    alpha:true,
-    premultipliedAlpha:false,
-    antialias:true
-  }) || canvas.getContext('webgl',{
-    xrCompatible:true,
-    alpha:true,
-    premultipliedAlpha:false,
-    antialias:true
-  });
-
-  await session.updateRenderState({
-    baseLayer:new XRWebGLLayer(session, gl, { alpha:true })
-  });
-
-  refSpace = await session.requestReferenceSpace('local');
-
-  initGL();
-  session.requestAnimationFrame(xrFrame);
-
-  document.addEventListener('keydown',function(e){
-    if(e.code === 'Space') triggerAbility();
-  });
-}
-
-function showErr(m){
-  const e=document.getElementById('err');
-  e.textContent=m;
-  e.style.display='block';
-}
-function hideErr(){
-  const e=document.getElementById('err');
-  e.style.display='none';
-}
-
-/* =========================================================
-   TRUE NORTH / DEVICE ORIENTATION
-========================================================= */
-async function initCompassSensor(){
-  if(typeof DeviceOrientationEvent === 'undefined') return;
-
-  try{
-    if(typeof DeviceOrientationEvent.requestPermission === 'function'){
-      try{
-        const perm = await DeviceOrientationEvent.requestPermission();
-        if(perm !== 'granted') return;
-      }catch(e){
-        return;
-      }
-    }
-
-    window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
-    window.addEventListener('deviceorientation', onDeviceOrientation, true);
-  }catch(e){}
-}
-
-function onDeviceOrientation(ev){
-  let heading = null;
-
-  if(typeof ev.webkitCompassHeading === 'number'){
-    heading = ev.webkitCompassHeading;
-  }else if(ev.absolute === true && typeof ev.alpha === 'number'){
-    heading = (360 - ev.alpha) % 360;
-  }
-
-  if(heading !== null && !Number.isNaN(heading)){
-    S.hasTrueNorth = true;
-    S.trueNorthHeading = normDeg(heading);
-  }
-}
-
-function normDeg(v){
-  return ((v % 360) + 360) % 360;
-}
-
-/* =========================================================
-   GESTURE
-========================================================= */
-function jp(hand,name,frame){
-  if(!hand) return null;
-  const joint = hand.get(name);
-  if(!joint) return null;
-  const pose = frame.getJointPose(joint, refSpace);
-  if(!pose) return null;
-  return pose.transform.position;
-}
-function d3(a,b){
-  const dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
-  return Math.sqrt(dx*dx+dy*dy+dz*dz);
-}
-function checkTouch(frame){
-  if(S.touchCool>0) return;
-
-  const iTip = jp(handL,'index-finger-tip',frame);
-  const wR   = jp(handR,'wrist',frame);
-  const mR   = jp(handR,'middle-finger-phalanx-proximal',frame);
-  if(!iTip || !wR || !mR) return;
-
-  const palm = {
-    x:(wR.x+mR.x)*0.5,
-    y:(wR.y+mR.y)*0.5,
-    z:(wR.z+mR.z)*0.5
-  };
-
-  const dist = d3(iTip,palm);
-
-  if(dist < TOUCH_DIST && !S.wasTouching){
-    S.wasTouching = true;
-    triggerAbility();
-  }
-  if(dist > TOUCH_DIST*1.8){
-    S.wasTouching = false;
-  }
-}
-
-function triggerAbility(){
-  if(S.hudVisible || S.ending) return;
-  S.hudVisible = true;
-  S.ending = false;
-  S.remain = ABILITY_DURATION;
-  S.fadeOut = END_FADE_DURATION;
-  S.intro = 0;
-  S.pulse = 0;
-}
-
-/* =========================================================
-   GL
-========================================================= */
-const VERT = `
-precision highp float;
-attribute vec3 aPos;
-attribute vec2 aUV;
-uniform mat4 uProj;
-varying vec2 vUV;
-void main(){
-  gl_Position = uProj * vec4(aPos,1.0);
-  vUV = aUV;
-}
-`;
-
-const FRAG = `
-precision mediump float;
-varying vec2 vUV;
-uniform sampler2D uTex;
-void main(){
-  vec4 c = texture2D(uTex, vUV);
-  gl_FragColor = vec4(c.rgb * c.a, c.a);
-}
-`;
-
-let prog, vbo, tex, aPos, aUV, uProj, uTex_;
-
-function initGL(){
-  const vs = mkSh(gl.VERTEX_SHADER, VERT);
-  const fs = mkSh(gl.FRAGMENT_SHADER, FRAG);
-
-  prog = gl.createProgram();
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-
-  const hw = HUD_WIDTH * 0.5;
-  const hh = HUD_HEIGHT * 0.5;
-  const yb = -hh + HUD_Y_OFFSET;
-  const yt =  hh + HUD_Y_OFFSET;
-
-  vbo = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    -hw, yb, HUD_DISTANCE, 0,1,
-     hw, yb, HUD_DISTANCE, 1,1,
-    -hw, yt, HUD_DISTANCE, 0,0,
-     hw, yt, HUD_DISTANCE, 1,0
-  ]), gl.STATIC_DRAW);
-
-  aPos = gl.getAttribLocation(prog,'aPos');
-  aUV  = gl.getAttribLocation(prog,'aUV');
-  uProj= gl.getUniformLocation(prog,'uProj');
-  uTex_= gl.getUniformLocation(prog,'uTex');
-
-  tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-}
-function mkSh(type,src){
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh,src);
-  gl.compileShader(sh);
-  return sh;
-}
-
-/* =========================================================
-   HUD CANVAS
-========================================================= */
-const HW = 1600;
-const HH = 900;
-const hc = document.createElement('canvas');
-hc.width = HW;
-hc.height = HH;
-const hx = hc.getContext('2d');
-
-/* palm button canvas */
-const palmCanvas = document.createElement('canvas');
-palmCanvas.width = 256;
-palmCanvas.height = 256;
-const px = palmCanvas.getContext('2d');
-
-/* =========================================================
-   XR LOOP
-========================================================= */
-let lastT = 0;
-
-function xrFrame(t, frame){
-  session.requestAnimationFrame(xrFrame);
-
-  const dt = lastT ? (t-lastT)/1000 : 0.016;
-  lastT = t;
-
-  const pose = frame.getViewerPose(refSpace);
-
-  if(pose){
-    const q = pose.transform.orientation;
-    const yaw = Math.atan2(
-      2*(q.y*q.w + q.x*q.z),
-      1 - 2*(q.y*q.y + q.z*q.z)
-    );
-
-    const yawDeg = normDeg(-yaw * 180 / Math.PI);
-    S.rawViewerHeading = yawDeg;
-
-    if(S.baselineYaw === null) S.baselineYaw = yawDeg;
-
-    if(S.hasTrueNorth){
-      S.heading = S.trueNorthHeading;
-    }else{
-      S.heading = normDeg(yawDeg - S.baselineYaw);
-    }
-  }
-
-  if(session.inputSources){
-    for(const src of session.inputSources){
-      if(src.hand){
-        if(src.handedness === 'left') handL = src.hand;
-        if(src.handedness === 'right') handR = src.hand;
-      }
-    }
-  }
-
-  if(S.touchCool>0) S.touchCool = Math.max(0, S.touchCool-dt);
-  checkTouch(frame);
-
-  if(S.hudVisible){
-    S.remain = Math.max(0, S.remain-dt);
-    S.intro  = Math.min(1, S.intro + dt*7.0);
-    S.pulse += dt*5.7;
-
-    if(S.remain <= 0){
-      S.hudVisible = false;
-      S.ending = true;
-      S.fadeOut = END_FADE_DURATION;
-      S.touchCool = COOLDOWN_TOUCH;
-      S.wasTouching = false;
-    }
-  } else if(S.ending){
-    S.fadeOut = Math.max(0, S.fadeOut - dt);
-    if(S.fadeOut <= 0){
-      S.ending = false;
-    }
-  }
-
-  if(!pose) return;
-
-  const layer = session.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-  gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-  drawHUD();
-
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hc);
-
-  for(const view of pose.views){
-    const vp = layer.getViewport(view);
-    gl.viewport(vp.x, vp.y, vp.width, vp.height);
-    drawEye(view.projectionMatrix);
-  }
-
-  drawPalmButton(frame, pose);
-}
-
-function drawEye(proj){
-  gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,20,0);
-
-  gl.enableVertexAttribArray(aUV);
-  gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,20,12);
-
-  gl.uniformMatrix4fv(uProj,false,proj);
-  gl.uniform1i(uTex_,0);
-
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-  gl.disable(gl.DEPTH_TEST);
-
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-}
-
-/* =========================================================
-   HUD DRAW
-========================================================= */
-function drawHUD(){
-  hx.clearRect(0,0,HW,HH);
-
-  drawTopCompass(1.0);
-
-  if(!S.hudVisible && !S.ending) return;
-
-  const endFadeAlpha = S.ending ? (S.fadeOut / END_FADE_DURATION) : 1.0;
-
-  const appear = easeOutCubic(S.intro);
-  const flick  = 0.96 + Math.sin(S.pulse*2.1)*0.04;
-  const activeAlpha = Math.min(1, appear * flick);
-  const a = activeAlpha * endFadeAlpha;
-
-  drawHelmetProjectorGlow(a);
-  drawTopAbilityBar(a);
-  drawOuterGhostFrame(a);
-  drawSideAssemblies(a);
-  drawFloatingMicroReticle(a);
-  drawDigitalNoise(a);
-}
-
-function easeOutCubic(x){
-  return 1 - Math.pow(1-x,3);
-}
-function clamp01(v){
-  return Math.max(0, Math.min(1, v));
-}
-function stagedAppear(start, end){
-  if(!S.hudVisible) return 1;
-  return clamp01((S.intro - start) / (end - start));
-}
-
-/* =========================================================
-   PROIETTORI / HELMET GLOW
-========================================================= */
-function drawHelmetProjectorGlow(a){
-  const localA = a * stagedAppear(0.00, 0.20);
-  let g;
-
-  g = hx.createRadialGradient(-140, HH*0.52, 0, -140, HH*0.52, 520);
-  g.addColorStop(0.00, `rgba(255,65,190,${0.22*localA})`);
-  g.addColorStop(0.18, `rgba(255,65,190,${0.16*localA})`);
-  g.addColorStop(0.38, `rgba(255,65,190,${0.08*localA})`);
-  g.addColorStop(0.72, `rgba(255,65,190,${0.02*localA})`);
-  g.addColorStop(1.00, `rgba(255,65,190,0)`);
-  hx.fillStyle = g;
-  hx.fillRect(0,0,HW,HH);
-
-  g = hx.createRadialGradient(HW+140, HH*0.52, 0, HW+140, HH*0.52, 520);
-  g.addColorStop(0.00, `rgba(255,65,190,${0.22*localA})`);
-  g.addColorStop(0.18, `rgba(255,65,190,${0.16*localA})`);
-  g.addColorStop(0.38, `rgba(255,65,190,${0.08*localA})`);
-  g.addColorStop(0.72, `rgba(255,65,190,${0.02*localA})`);
-  g.addColorStop(1.00, `rgba(255,65,190,0)`);
-  hx.fillStyle = g;
-  hx.fillRect(0,0,HW,HH);
-
-  g = hx.createRadialGradient(120, HH+40, 0, 120, HH+40, 240);
-  g.addColorStop(0.00, `rgba(255,70,190,${0.38*localA})`);
-  g.addColorStop(0.18, `rgba(255,70,190,${0.20*localA})`);
-  g.addColorStop(0.42, `rgba(255,70,190,${0.08*localA})`);
-  g.addColorStop(1.00, `rgba(255,70,190,0)`);
-  hx.fillStyle = g;
-  hx.fillRect(0,0,HW,HH);
-
-  g = hx.createRadialGradient(HW-120, HH+40, 0, HW-120, HH+40, 240);
-  g.addColorStop(0.00, `rgba(255,70,190,${0.38*localA})`);
-  g.addColorStop(0.18, `rgba(255,70,190,${0.20*localA})`);
-  g.addColorStop(0.42, `rgba(255,70,190,${0.08*localA})`);
-  g.addColorStop(1.00, `rgba(255,70,190,0)`);
-  hx.fillStyle = g;
-  hx.fillRect(0,0,HW,HH);
-
-  let lg = hx.createLinearGradient(0,0,HW,0);
-  lg.addColorStop(0.00, `rgba(255,70,190,${0.10*localA})`);
-  lg.addColorStop(0.07, `rgba(255,70,190,${0.04*localA})`);
-  lg.addColorStop(0.18, `rgba(255,70,190,0)`);
-  lg.addColorStop(0.82, `rgba(255,70,190,0)`);
-  lg.addColorStop(0.93, `rgba(255,70,190,${0.04*localA})`);
-  lg.addColorStop(1.00, `rgba(255,70,190,${0.10*localA})`);
-  hx.fillStyle = lg;
-  hx.fillRect(0,0,HW,HH);
-}
-
-/* =========================================================
-   TOP COMPASS
-========================================================= */
-function drawTopCompass(a){
-  const cx = HW*0.5;
-  const y  = 52;
-  const d  = Math.round(S.heading);
-  const txt = `${headingLabel(d)} ${String(d).padStart(3,'0')}`;
-
-  hx.textAlign='center';
-  hx.textBaseline='middle';
-
-  hx.fillStyle = `rgba(245,245,255,${0.92*a})`;
-  hx.font = `500 18px Arial`;
-  hx.fillText('NE', cx-135, y);
-  hx.fillText('SE', cx+135, y);
-
-  hx.strokeStyle = `rgba(245,245,255,${0.72*a})`;
-  hx.lineWidth = 1.2;
-  hx.beginPath(); hx.moveTo(cx-54,y); hx.lineTo(cx-24,y); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+24,y); hx.lineTo(cx+54,y); hx.stroke();
-
-  hx.fillStyle = `rgba(245,245,255,${0.98*a})`;
-  hx.font = `700 28px Arial`;
-  hx.fillText(txt, cx, y-1);
-}
-
-function headingLabel(deg){
-  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  return dirs[Math.round(deg/22.5)%16];
-}
-
-/* =========================================================
-   TOP BAR
-========================================================= */
-function drawTopAbilityBar(a){
-  const localA = a * stagedAppear(0.08, 0.34);
-  const cx = HW*0.5;
-  const y  = 152;
-  const pink     = `rgba(255,100,230,${localA})`;
-  const pinkSoft = `rgba(255,100,230,${0.5*localA})`;
-  const yellow   = `rgba(255,224,120,${localA})`;
-
-  const ticks = 10;
-  const tickW = 8;
-  const tickH = 26;
-  const tickGap = 6;
-  const leftStart = cx - 42 - ticks*(tickW+tickGap);
-  const rightStart = cx + 42;
-
-  // quanti step passati: 0..10
-  // ogni 2 secondi sparisce una coppia
-  const elapsed = S.hudVisible ? (ABILITY_DURATION - S.remain) : ABILITY_DURATION;
-  const stepsGone = Math.max(0, Math.min(10, Math.floor(elapsed / 2)));
-
-  // 10 tacche sinistra, dal centro all'esterno
-  // 10 tacche destra, dal centro all'esterno
-  for(let i=0;i<ticks;i++){
-    const lx = leftStart + i*(tickW+tickGap);
-    const rx = rightStart + i*(tickW+tickGap);
-
-    // i=9 vicino al centro a sinistra
-    // i=0 esterno a sinistra
-    const leftNearCenterIndex = ticks - 1 - i;
-    const rightNearCenterIndex = i;
-
-    const leftVisible = leftNearCenterIndex >= stepsGone;
-    const rightVisible = rightNearCenterIndex >= stepsGone;
-
-    if(leftVisible){
-      hx.fillStyle = pink;
-      hx.fillRect(lx,y,tickW,tickH);
-    }else{
-      hx.fillStyle = `rgba(255,100,230,${0.08*localA})`;
-      hx.fillRect(lx,y,tickW,tickH);
-    }
-
-    if(rightVisible){
-      hx.fillStyle = pink;
-      hx.fillRect(rx,y,tickW,tickH);
-    }else{
-      hx.fillStyle = `rgba(255,100,230,${0.08*localA})`;
-      hx.fillRect(rx,y,tickW,tickH);
-    }
-  }
-
-  hx.fillStyle = `rgba(255,255,255,${0.95*localA})`;
-  hx.font = `700 28px Arial`;
-  hx.textAlign='center';
-  hx.textBaseline='middle';
-  hx.fillText('01', cx, y+13);
-
-  // blocchi gialli sempre pieni
-  const slotW=46, slotH=22, slotGap=6;
-  const total = slotW*3 + slotGap*2;
-  const sx = cx-total/2;
-  const sy = y+38;
-
-  for(let i=0;i<3;i++){
-    const x = sx + i*(slotW+slotGap);
-    hx.fillStyle = yellow;
-    hx.fillRect(x,sy,slotW,slotH);
-  }
-
-  drawTopCircle(cx-152,y+18,localA);
-  drawTopCircle(cx-98, y+18,localA);
-  drawTopCircle(cx+98, y+18,localA);
-  drawTopCircle(cx+152,y+18,localA);
-
-  hx.strokeStyle = pinkSoft;
-  hx.lineWidth = 2.1;
-
-  hx.beginPath();
-  hx.moveTo(365, y+10);
-  hx.lineTo(445, y+10);
-  hx.lineTo(468, y-6);
-  hx.lineTo(610, y-6);
-  hx.stroke();
-
-  hx.beginPath();
-  hx.moveTo(HW-365, y+10);
-  hx.lineTo(HW-445, y+10);
-  hx.lineTo(HW-468, y-6);
-  hx.lineTo(HW-610, y-6);
-  hx.stroke();
-}
-
-function drawTopCircle(x,y,a){
-  const r = 19;
-  hx.strokeStyle = `rgba(255,100,230,${a})`;
-  hx.lineWidth = 2;
-  hx.beginPath();
-  hx.arc(x,y,r,0,Math.PI*2);
-  hx.stroke();
-
-  hx.fillStyle = `rgba(255,100,230,${0.13*a})`;
-  hx.beginPath();
-  hx.arc(x,y,r-1,0,Math.PI*2);
-  hx.fill();
-
-  hx.beginPath();
-  hx.arc(x,y,11.5,0,Math.PI*2);
-  hx.strokeStyle = `rgba(255,100,230,${0.34*a})`;
-  hx.lineWidth = 1.2;
-  hx.stroke();
-
-  hx.strokeStyle = `rgba(255,100,230,${0.95*a})`;
-  hx.lineWidth = 2;
-  hx.beginPath();
-  hx.moveTo(x-6,y);
-  hx.lineTo(x+6,y);
-  hx.stroke();
-
-  hx.beginPath();
-  hx.moveTo(x-1,y-4);
-  hx.lineTo(x+6,y);
-  hx.lineTo(x-1,y+4);
-  hx.stroke();
-}
-
-/* =========================================================
-   GHOST FRAME
-========================================================= */
-function drawOuterGhostFrame(a){
-  const localA = a * stagedAppear(0.14, 0.42);
-  const pink = `rgba(255,100,230,${0.85*localA})`;
-  const soft = `rgba(255,100,230,${0.48*localA})`;
-
-  hx.strokeStyle = pink;
-  hx.lineWidth = 2;
-  hx.beginPath(); hx.moveTo(118,170); hx.lineTo(118,690); hx.stroke();
-  hx.beginPath(); hx.moveTo(HW-118,170); hx.lineTo(HW-118,690); hx.stroke();
-
-  hx.beginPath(); hx.moveTo(118,170); hx.lineTo(145,170); hx.stroke();
-  hx.beginPath(); hx.moveTo(118,690); hx.lineTo(145,690); hx.stroke();
-  hx.beginPath(); hx.moveTo(HW-118,170); hx.lineTo(HW-145,170); hx.stroke();
-  hx.beginPath(); hx.moveTo(HW-118,690); hx.lineTo(HW-145,690); hx.stroke();
-
-  drawCrossMark(150,170,localA,9);
-  drawCrossMark(HW-150,170,localA,9);
-  drawCrossMark(150,690,localA,9);
-  drawCrossMark(HW-150,690,localA,9);
-
-  hx.fillStyle = soft;
-  hx.fillRect(165,318,12,12);
-  hx.fillRect(165,538,12,12);
-  hx.fillRect(HW-177,318,12,12);
-  hx.fillRect(HW-177,538,12,12);
-}
-
-/* =========================================================
-   SIDE ASSEMBLIES
-========================================================= */
-function drawSideAssemblies(a){
-  const localA = a * stagedAppear(0.24, 0.56);
-  drawAssemblyLeft(300, 450, localA);
-  drawAssemblyRight(HW-300, 450, localA);
-}
-
-function drawAssemblyLeft(cx,cy,a){
-  const p1 = `rgba(255,60,210,${a})`;
-  const p2 = `rgba(255,125,235,${0.82*a})`;
-  const p3 = `rgba(255,190,248,${0.20*a})`;
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx-15, cy-128, 30, 256);
-
-  hx.fillStyle = p2;
-  hx.fillRect(cx-42, cy-42, 84, 84);
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx-22, cy-22, 44, 44);
-
-  hx.fillStyle = p3;
-  hx.fillRect(cx-8, cy-8, 16, 16);
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx+42, cy-34, 96, 18);
-  hx.fillRect(cx+42, cy+16, 96, 18);
-
-  hx.fillStyle = p2;
-  hx.fillRect(cx+138, cy-40, 24, 24);
-  hx.fillRect(cx+138, cy+10, 24, 24);
-
-  hx.fillRect(cx-22, cy-150, 14, 14);
-  hx.fillRect(cx+8,  cy-150, 14, 14);
-  hx.fillRect(cx-22, cy+136, 14, 14);
-  hx.fillRect(cx+8,  cy+136, 14, 14);
-
-  hx.fillRect(cx-42, cy-66, 10, 10);
-  hx.fillRect(cx-62, cy-24, 10, 10);
-  hx.fillRect(cx-62, cy+16, 10, 10);
-  hx.fillRect(cx-42, cy+56, 10, 10);
-
-  hx.strokeStyle = `rgba(255,100,230,${0.75*a})`;
-  hx.lineWidth = 1.8;
-  hx.beginPath(); hx.moveTo(cx+162, cy-31); hx.lineTo(cx+248, cy-31); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+162, cy+25); hx.lineTo(cx+248, cy+25); hx.stroke();
-}
-
-function drawAssemblyRight(cx,cy,a){
-  const p1 = `rgba(255,60,210,${a})`;
-  const p2 = `rgba(255,125,235,${0.82*a})`;
-  const p3 = `rgba(255,190,248,${0.20*a})`;
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx-15, cy-128, 30, 256);
-
-  hx.fillStyle = p2;
-  hx.fillRect(cx-42, cy-42, 84, 84);
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx-22, cy-22, 44, 44);
-
-  hx.fillStyle = p3;
-  hx.fillRect(cx-8, cy-8, 16, 16);
-
-  hx.fillStyle = p1;
-  hx.fillRect(cx-138, cy-34, 96, 18);
-  hx.fillRect(cx-138, cy+16, 96, 18);
-
-  hx.fillStyle = p2;
-  hx.fillRect(cx-162, cy-40, 24, 24);
-  hx.fillRect(cx-162, cy+10, 24, 24);
-
-  hx.fillRect(cx-22, cy-150, 14, 14);
-  hx.fillRect(cx+8,  cy-150, 14, 14);
-  hx.fillRect(cx-22, cy+136, 14, 14);
-  hx.fillRect(cx+8,  cy+136, 14, 14);
-
-  hx.fillRect(cx+32, cy-66, 10, 10);
-  hx.fillRect(cx+52, cy-24, 10, 10);
-  hx.fillRect(cx+52, cy+16, 10, 10);
-  hx.fillRect(cx+32, cy+56, 10, 10);
-
-  hx.strokeStyle = `rgba(255,100,230,${0.75*a})`;
-  hx.lineWidth = 1.8;
-  hx.beginPath(); hx.moveTo(cx-162, cy-31); hx.lineTo(cx-248, cy-31); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx-162, cy+25); hx.lineTo(cx-248, cy+25); hx.stroke();
-}
-
-/* =========================================================
-   CENTER MICRO RETICLE
-========================================================= */
-function drawFloatingMicroReticle(a){
-  const localA = a * stagedAppear(0.30, 0.50);
-  const cx = HW*0.5;
-  const cy = HH*0.50 + 8;
-
-  hx.strokeStyle = `rgba(255,100,230,${0.42*localA})`;
-  hx.lineWidth = 1.4;
-
-  hx.beginPath(); hx.moveTo(cx-18,cy); hx.lineTo(cx-6,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx+6,cy); hx.lineTo(cx+18,cy); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx,cy-18); hx.lineTo(cx,cy-6); hx.stroke();
-  hx.beginPath(); hx.moveTo(cx,cy+6); hx.lineTo(cx,cy+18); hx.stroke();
-
-  hx.fillStyle = `rgba(255,100,230,${0.48*localA})`;
-  hx.fillRect(cx-2,cy-2,4,4);
-}
-
-/* =========================================================
-   NOISE / MICRO MARKS
-========================================================= */
-function drawDigitalNoise(a){
-  const localA = a * stagedAppear(0.18, 0.44);
-  const pts = [
-    [430,130],[1170,130],
-    [646,158],[954,158],
-    [640,196],[960,196],
-    [212,449],[1388,449],
-    [225,330],[1375,330],
-    [225,570],[1375,570],
-    [300,268],[1300,268],
-    [300,632],[1300,632]
-  ];
-
-  hx.fillStyle = `rgba(255,100,230,${0.56*localA})`;
-  for(const p of pts){
-    hx.fillRect(p[0]-2,p[1]-2,4,4);
-  }
-
-  drawCrossMark(212,449,localA,8);
-  drawCrossMark(1388,449,localA,8);
-
-  hx.strokeStyle = `rgba(255,100,230,${0.22*localA})`;
-  hx.lineWidth = 1;
-  hx.beginPath(); hx.moveTo(560,450); hx.lineTo(610,450); hx.stroke();
-  hx.beginPath(); hx.moveTo(990,450); hx.lineTo(1040,450); hx.stroke();
-}
-
-function drawCrossMark(x,y,a,s){
-  hx.strokeStyle = `rgba(255,100,230,${0.8*a})`;
-  hx.lineWidth = 1.4;
-  hx.beginPath(); hx.moveTo(x-s,y); hx.lineTo(x+s,y); hx.stroke();
-  hx.beginPath(); hx.moveTo(x,y-s); hx.lineTo(x,y+s); hx.stroke();
-}
-
-/* =========================================================
-   PALM BUTTON
-========================================================= */
-function drawPalmButton(frame, pose){
-  if(!handR || !pose) return;
-
-  const wristJ = handR.get('wrist');
-  const indexMCPJ = handR.get('index-finger-metacarpal');
-  const pinkyMCPJ = handR.get('pinky-finger-metacarpal');
-
-  if(!wristJ || !indexMCPJ || !pinkyMCPJ) return;
-
-  const wristPose = frame.getJointPose(wristJ, refSpace);
-  const indexPose = frame.getJointPose(indexMCPJ, refSpace);
-  const pinkyPose = frame.getJointPose(pinkyMCPJ, refSpace);
-
-  if(!wristPose || !indexPose || !pinkyPose) return;
-
-  const w = wristPose.transform.position;
-  const i = indexPose.transform.position;
-  const p = pinkyPose.transform.position;
-
-  const palmCenter = {
-    x: (w.x + i.x + p.x) / 3,
-    y: (w.y + i.y + p.y) / 3,
-    z: (w.z + i.z + p.z) / 3
-  };
-
-  const rightVec = normalize({
-    x: i.x - p.x,
-    y: i.y - p.y,
-    z: i.z - p.z
-  });
-
-  const upVec = normalize({
-    x: ((i.x + p.x) * 0.5) - w.x,
-    y: ((i.y + p.y) * 0.5) - w.y,
-    z: ((i.z + p.z) * 0.5) - w.z
-  });
-
-  // normale del palmo
-  let normal = normalize(cross(rightVec, upVec));
-
-  // spinta in avanti dalla mano
-  const center = {
-    x: palmCenter.x + normal.x * PALM_BTN_DIST,
-    y: palmCenter.y + normal.y * PALM_BTN_DIST,
-    z: palmCenter.z + normal.z * PALM_BTN_DIST
-  };
-
-  drawPalmButtonCanvas();
-
-  // proietta nel viewport di ogni occhio
-  const layer = session.renderState.baseLayer;
-  for(const view of pose.views){
-    const vp = layer.getViewport(view);
-    const pt = projectPoint(center, view.projectionMatrix);
-    if(!pt || pt.w <= 0) continue;
-
-    const sx = vp.x + (pt.x * 0.5 + 0.5) * vp.width;
-    const sy = vp.y + (-pt.y * 0.5 + 0.5) * vp.height;
-
-    const scale = 900 * PALM_BTN_SIZE / Math.max(0.2, pt.w);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-    drawCanvasBillboard2D(palmCanvas, sx, sy, scale, scale);
-  }
-}
-
-function drawPalmButtonCanvas(){
-  px.clearRect(0,0,256,256);
-
-  const g = px.createRadialGradient(128,128,0,128,128,110);
-  g.addColorStop(0.00,'rgba(110,255,120,0.95)');
-  g.addColorStop(0.35,'rgba(65,230,90,0.92)');
-  g.addColorStop(0.72,'rgba(20,170,40,0.88)');
-  g.addColorStop(1.00,'rgba(20,170,40,0)');
-  px.fillStyle = g;
-  px.beginPath();
-  px.arc(128,128,100,0,Math.PI*2);
-  px.fill();
-
-  px.strokeStyle = 'rgba(170,255,180,0.95)';
-  px.lineWidth = 4;
-  px.beginPath();
-  px.arc(128,128,54,0,Math.PI*2);
-  px.stroke();
-
-  px.strokeStyle = 'rgba(220,255,225,0.95)';
-  px.lineWidth = 6;
-  px.lineCap = 'round';
-  px.beginPath();
-  px.moveTo(128,94);
-  px.lineTo(128,162);
-  px.stroke();
-  px.beginPath();
-  px.moveTo(94,128);
-  px.lineTo(162,128);
-  px.stroke();
-
-  px.strokeStyle = 'rgba(30,120,30,0.5)';
-  px.lineWidth = 2;
-  px.beginPath();
-  px.arc(128,128,82,0,Math.PI*2);
-  px.stroke();
-}
-
-function projectPoint(pos, proj){
-  const x = pos.x, y = pos.y, z = pos.z, w = 1;
-  const m = proj;
-
-  const cx = m[0]*x + m[4]*y + m[8]*z + m[12]*w;
-  const cy = m[1]*x + m[5]*y + m[9]*z + m[13]*w;
-  const cz = m[2]*x + m[6]*y + m[10]*z + m[14]*w;
-  const cw = m[3]*x + m[7]*y + m[11]*z + m[15]*w;
-
-  if(cw === 0) return null;
-  return {
-    x: cx / cw,
-    y: cy / cw,
-    z: cz / cw,
-    w: cw
-  };
-}
-
-function drawCanvasBillboard2D(sourceCanvas, sx, sy, w, h){
-  // disegno 2D diretto nel default framebuffer usando temporary canvas upload
-  // riuso texture principale per semplicità: non perfetto, ma funziona solo come overlay extra
-  // creo un piccolo canvas temporaneo con trasparenza già pronta
-  // poi lo disegno sopra tramite DOM canvas non è possibile qui, quindi fallback:
-  // palm button viene integrato nel main HUD in prossimità del centro se la proiezione esiste.
-}
-
-/* =========================================================
-   MATH HELPERS
-========================================================= */
-function cross(a,b){
-  return {
-    x: a.y*b.z - a.z*b.y,
-    y: a.z*b.x - a.x*b.z,
-    z: a.x*b.y - a.y*b.x
-  };
-}
-function normalize(v){
-  const l = Math.hypot(v.x,v.y,v.z) || 1;
-  return { x:v.x/l, y:v.y/l, z:v.z/l };
-}
+  // Load TF.js pose detection
+  loadDetector();
+});
+
+// Click fallback for desktop testing
+document.getElementById('app').addEventListener('click', () => {
+  if (!xrSession) { initAudio(); toggleAbility(); }
+});
 </script>
+
+<!-- TensorFlow.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 </body>
 </html>
