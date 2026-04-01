@@ -25,7 +25,7 @@ canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:bloc
 .b-bwrap{ width:280px; height:2px; background:#1a001a; margin-top:36px; opacity:0; animation:fi 0.3s 3.2s forwards; }
 .b-bar  { height:100%; width:0; background:#ff2afc; animation:lb 1s 3.4s forwards; }
 .b-ready{ font-size:10px; letter-spacing:5px; color:#ff2afc; margin-top:16px; opacity:0; animation:fi 0.5s 4.5s forwards; }
-.b-ver  { font-size:9px; letter-spacing:3px; color:rgba(0,232,255,0.4); margin-top:10px; opacity:0; animation:fi 0.3s 4.7s forwards; }
+.b-ver  { font-size:13px; letter-spacing:4px; color:#00e8ff; margin-top:14px; opacity:0; animation:fi 0.3s 4.7s forwards; border:1px solid rgba(0,232,255,0.3); padding:4px 14px; }
 @keyframes fi { to{opacity:1;} }
 @keyframes lb { to{width:100%;} }
 #enterbtn {
@@ -60,7 +60,7 @@ canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:bloc
   </div>
   <div class="b-bwrap"><div class="b-bar"></div></div>
   <div class="b-ready">SYSTEM READY</div>
-  <div class="b-ver">v1.0.0</div>
+  <div class="b-ver">v1.2.0</div>
 </div>
 
 <button id="enterbtn">ENTRA IN VR</button>
@@ -455,29 +455,52 @@ document.addEventListener('keydown',e=>{if(e.code==='Space'){initAudio();toggleA
 // ============================================================
 // HAND TRACKING — gesture detection
 // ============================================================
-// Returns distance between two joints in meters
-function jDist(hand,a,b){
-  try{
-    const pa=hand.get(a).transform.position;
-    const pb=hand.get(b).transform.position;
-    return Math.hypot(pa.x-pb.x,pa.y-pb.y,pa.z-pb.z);
-  }catch(e){return 999;}
+function jPos(hand, name) {
+  try { return hand.get(name).transform.position; }
+  catch(e) { return null; }
+}
+function dist3(a, b) {
+  if(!a || !b) return 999;
+  return Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
 }
 
-// Pinch: thumb tip near index tip
-function isPinch(hand){ return jDist(hand,'thumb-tip','index-finger-tip')<0.030; }
-
-// Fist: all fingertips near palm (wrist)
-function isFist(hand){
-  const tips=['index-finger-tip','middle-finger-tip','ring-finger-tip','pinky-finger-tip'];
-  const metas=['index-finger-metacarpal','middle-finger-metacarpal','ring-finger-metacarpal','pinky-finger-metacarpal'];
-  let n=0;
-  for(let i=0;i<4;i++) if(jDist(hand,tips[i],metas[i])<0.065) n++;
-  return n>=3;
+// RIGHT palm center = midpoint between index-metacarpal and pinky-metacarpal
+function getRightPalmCenter(hand) {
+  const a = jPos(hand, 'index-finger-metacarpal');
+  const b = jPos(hand, 'pinky-metacarpal');
+  const w = jPos(hand, 'wrist');
+  if(!a || !w) return null;
+  if(b) return { x:(a.x+b.x+w.x)/3, y:(a.y+b.y+w.y)/3, z:(a.z+b.z+w.z)/3 };
+  return { x:(a.x+w.x)/2, y:(a.y+w.y)/2, z:(a.z+w.z)/2 };
 }
 
-let prevPinchR=false, prevFistL=false;
-let pinchHoldTime=0; // debounce: require hold for 2 frames
+// TRIGGER: any left-hand fingertip within 8cm of right palm center
+const LEFT_TIPS = [
+  'index-finger-tip',
+  'middle-finger-tip',
+  'ring-finger-tip',
+  'pinky-finger-tip',
+  'thumb-tip'
+];
+
+function isLeftFingerOnRightPalm(leftHand, rightHand) {
+  const palmCenter = getRightPalmCenter(rightHand);
+  if(!palmCenter) return false;
+  for(const tip of LEFT_TIPS) {
+    const p = jPos(leftHand, tip);
+    if(dist3(p, palmCenter) < 0.09) return true; // 9cm threshold
+  }
+  return false;
+}
+
+// Debounce: fire after 2 consecutive frames, reset when hands separate
+let touchFrames  = 0;
+let touchActive  = false;
+const TOUCH_FRAMES_REQUIRED = 2;
+
+// Store current hand refs across loop iterations
+let currentHandL = null;
+let currentHandR = null;
 
 // ============================================================
 // XR SESSION
@@ -496,20 +519,42 @@ async function onXRFrame(t,frame){
     heading=((-yaw*180/Math.PI)+360)%360;
   }
 
-  // Hand tracking
+  // Hand tracking — collect both hands first, then evaluate gesture
+  currentHandL = null; currentHandR = null;
   for(const src of xrSession.inputSources){
     if(!src.hand) continue;
-    if(src.handedness==='right'){
-      const pinch=isPinch(src.hand);
-      document.getElementById('d-r').textContent='DX: '+(pinch?'PINCH':'—');
-      if(pinch && !prevPinchR){ initAudio(); toggleAbility(); }
-      prevPinchR=pinch;
+    if(src.handedness === 'left')  currentHandL = src.hand;
+    if(src.handedness === 'right') currentHandR = src.hand;
+  }
+
+  // Evaluate gesture: left finger on right palm
+  if(currentHandL && currentHandR) {
+    const touching = isLeftFingerOnRightPalm(currentHandL, currentHandR);
+    // Debug: show closest distance
+    const palmC = getRightPalmCenter(currentHandR);
+    let minD = 999;
+    for(const tip of LEFT_TIPS) {
+      const p = jPos(currentHandL, tip);
+      const d = dist3(p, palmC);
+      if(d < minD) minD = d;
     }
-    if(src.handedness==='left'){
-      const fist=isFist(src.hand);
-      document.getElementById('d-l').textContent='SX: '+(fist?'PUGNO':'—');
-      prevFistL=fist;
+    document.getElementById('d-l').textContent = 'SX→DX: '+(touching?'TOCCO':'—')+' '+minD.toFixed(3)+'m';
+    document.getElementById('d-r').textContent = palmC ? 'PALMO DX: OK' : 'PALMO DX: —';
+
+    if(touching) {
+      touchFrames++;
+      if(touchFrames >= TOUCH_FRAMES_REQUIRED && !touchActive) {
+        touchActive = true;
+        initAudio(); toggleAbility();
+      }
+    } else {
+      touchFrames = 0;
+      touchActive = false;
     }
+  } else {
+    document.getElementById('d-l').textContent = 'SX: '+(currentHandL?'OK':'—');
+    document.getElementById('d-r').textContent = 'DX: '+(currentHandR?'OK':'—');
+    touchFrames = 0; touchActive = false;
   }
 
   // Draw HUD
