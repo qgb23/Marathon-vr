@@ -4,72 +4,93 @@
 <meta charset="UTF-8">
 <title>XR Test</title>
 <style>
-body { background:#000; color:#0ff; font-family:monospace; padding:20px; }
-#log { font-size:12px; line-height:2; }
-button { background:transparent; border:1px solid #0ff; color:#0ff; font-family:monospace; font-size:14px; padding:12px 24px; cursor:pointer; margin:8px; display:block; }
+body { background:#000; color:#0ff; font-family:monospace; padding:20px; font-size:13px; }
+#log { line-height:2; margin-bottom:20px; }
+button { background:transparent; border:1px solid #0ff; color:#0ff; font-family:monospace; font-size:13px; padding:10px 20px; cursor:pointer; margin:6px; display:block; width:100%; }
+canvas { display:none; }
 </style>
 </head>
 <body>
-<div id="log">Checking XR support...<br></div>
+<canvas id="c"></canvas>
+<div id="log">Checking...<br></div>
 <div id="buttons"></div>
 <script>
 const log = document.getElementById('log');
-const btns = document.getElementById('buttons');
+function print(msg) { log.innerHTML += msg + '<br>'; }
 
-function print(msg) {
-  log.innerHTML += msg + '<br>';
-}
+// Setup WebGL context compatible with XR
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { xrCompatible: true });
+if (!gl) print('<span style="color:#f44">✗ WebGL not available</span>');
+else print('✓ WebGL OK');
 
-async function trySession(mode, features, optional) {
-  print('→ Trying: ' + mode + ' | required: ' + JSON.stringify(features) + ' | optional: ' + JSON.stringify(optional));
+async function trySession(mode, req, opt) {
+  print('→ ' + mode + ' req:' + req.join(',') + ' opt:' + opt.join(','));
   try {
+    // Make GL context XR compatible first
+    await gl.makeXRCompatible();
+
     const sess = await navigator.xr.requestSession(mode, {
-      requiredFeatures: features,
-      optionalFeatures: optional
+      requiredFeatures: req,
+      optionalFeatures: opt
     });
-    print('<span style="color:#0f0">✓ SUCCESS: ' + mode + '</span>');
-    sess.addEventListener('end', () => print('Session ended'));
-    const ref = await sess.requestReferenceSpace(features.includes('local-floor') ? 'local-floor' : 'local');
-    print('✓ Reference space OK');
-    
+    print('<span style="color:#0f0">✓ Session created!</span>');
+
+    // Create XR-compatible WebGL layer — THIS is what makes Quest stop loading
+    const layer = new XRWebGLLayer(sess, gl);
+    await sess.updateRenderState({ baseLayer: layer });
+    print('✓ WebGL layer attached');
+
+    const refSpaceName = req.includes('local-floor') ? 'local-floor' : 'local';
+    const ref = await sess.requestReferenceSpace(refSpaceName);
+    print('✓ Reference space: ' + refSpaceName);
+
+    let frameCount = 0;
     sess.requestAnimationFrame(function frame(t, xrFrame) {
-      sess.requestAnimationFrame(frame);
+      frameCount++;
+      if (frameCount === 1) print('<span style="color:#0f0">✓ FIRST FRAME OK — combo funziona!</span>');
+      
+      // Clear screen so Quest knows we're rendering
+      const pose = xrFrame.getViewerPose(ref);
+      if (pose) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.clearColor(0, 0.05, 0.05, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      }
+      if (frameCount < 10) sess.requestAnimationFrame(frame);
+      else {
+        print('✓ 10 frames rendered — ending test session');
+        sess.end();
+      }
     });
-    return true;
+
   } catch(e) {
-    print('<span style="color:#f44">✗ FAIL: ' + e.message + '</span>');
-    return false;
+    print('<span style="color:#f44">✗ ' + e.name + ': ' + e.message + '</span>');
   }
 }
 
-async function checkSupport() {
-  if (!navigator.xr) { print('✗ navigator.xr not available'); return; }
-  print('✓ navigator.xr available');
+async function init() {
+  if (!navigator.xr) { print('✗ No WebXR'); return; }
+  print('✓ WebXR available');
 
-  const modes = ['immersive-vr', 'immersive-ar', 'inline'];
-  for (const m of modes) {
-    const ok = await navigator.xr.isSessionSupported(m).catch(e => false);
-    print((ok ? '✓' : '✗') + ' isSessionSupported(' + m + '): ' + ok);
-  }
-
-  // Add test buttons
   const tests = [
-    { label: 'VR + local + hand-tracking optional', mode: 'immersive-vr', req: ['local'], opt: ['hand-tracking'] },
-    { label: 'VR + local-floor + hand-tracking optional', mode: 'immersive-vr', req: ['local-floor'], opt: ['hand-tracking'] },
-    { label: 'VR + local only', mode: 'immersive-vr', req: ['local'], opt: [] },
+    { label: 'VR + local + hand optional', mode: 'immersive-vr', req: ['local'], opt: ['hand-tracking'] },
+    { label: 'VR + local-floor + hand optional', mode: 'immersive-vr', req: ['local-floor'], opt: ['hand-tracking'] },
+    { label: 'VR + local only (no hand)', mode: 'immersive-vr', req: ['local'], opt: [] },
     { label: 'AR + local + hand optional', mode: 'immersive-ar', req: ['local'], opt: ['hand-tracking'] },
     { label: 'AR + local only', mode: 'immersive-ar', req: ['local'], opt: [] },
   ];
 
-  tests.forEach(t => {
+  for (const t of tests) {
+    const supported = await navigator.xr.isSessionSupported(t.mode).catch(() => false);
     const b = document.createElement('button');
-    b.textContent = 'TEST: ' + t.label;
+    b.textContent = (supported ? '✓ ' : '? ') + t.label;
     b.onclick = () => trySession(t.mode, t.req, t.opt);
-    btns.appendChild(b);
-  });
+    document.getElementById('buttons').appendChild(b);
+  }
 }
 
-checkSupport();
+init();
 </script>
 </body>
 </html>
