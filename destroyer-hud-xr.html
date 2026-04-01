@@ -59,7 +59,7 @@ canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:bloc
   </div>
   <div class="b-bwrap"><div class="b-bar"></div></div>
   <div class="b-ready">SYSTEM READY</div>
-  <div class="b-ver">v1.4.0</div>
+  <div class="b-ver">v1.5.0</div>
 </div>
 <button id="enterbtn">ENTRA IN VR</button>
 <div id="dbg">
@@ -88,7 +88,7 @@ function hdgLabel(d){
 }
 
 function drawCompass(deg){
-  const cx=HW/2, cy=80, trackW=320;
+  const cx=HW/2, cy=HH/2-80, trackW=320;
   ctx.save();
   ctx.beginPath(); ctx.rect(cx-trackW/2,cy-22,trackW,40); ctx.clip();
   for(let d=-540;d<=540;d+=22.5){
@@ -139,7 +139,7 @@ function drawAbility(alpha){
   pcross(46,HH/2-32,0.9); pcross(46,HH/2+32,0.5);
   pcross(HW-46,HH/2-32,0.9); pcross(HW-46,HH/2+32,0.5);
   ctx.globalAlpha=alpha;
-  const midX=HW/2, topY=160;
+  const midX=HW/2, topY=HH/2-80;
   function drawCircle(cx,cy){ ctx.strokeStyle=MC; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(cx,cy,10,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx,cy-10); ctx.lineTo(cx,cy-6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+10,cy); ctx.lineTo(cx+6,cy); ctx.stroke(); }
   drawCircle(midX-102,topY); drawCircle(midX-78,topY);
   drawCircle(midX+78,topY); drawCircle(midX+102,topY);
@@ -282,7 +282,7 @@ function leftTouchesRightPalm(lHand, rHand){
     const d=dist3(p,pc);
     if(d<minD) minD=d;
   }
-  return {hit:minD<0.09, dist:minD};
+  return {hit:minD<0.12, dist:minD};
 }
 
 let touchFrames=0, touchFired=false;
