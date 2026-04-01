@@ -60,7 +60,7 @@ canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; display:bloc
   </div>
   <div class="b-bwrap"><div class="b-bar"></div></div>
   <div class="b-ready">SYSTEM READY</div>
-  <div class="b-ver">v1.2.0</div>
+  <div class="b-ver">v1.3.0</div>
 </div>
 
 <button id="enterbtn">ENTRA IN VR</button>
@@ -464,14 +464,15 @@ function dist3(a, b) {
   return Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
 }
 
-// RIGHT palm center = midpoint between index-metacarpal and pinky-metacarpal
+// RIGHT palm center — usa nomi joint corretti WebXR
 function getRightPalmCenter(hand) {
   const a = jPos(hand, 'index-finger-metacarpal');
-  const b = jPos(hand, 'pinky-metacarpal');
+  const b = jPos(hand, 'pinky-finger-metacarpal');  // CORRETTO: non 'pinky-metacarpal'
   const w = jPos(hand, 'wrist');
-  if(!a || !w) return null;
-  if(b) return { x:(a.x+b.x+w.x)/3, y:(a.y+b.y+w.y)/3, z:(a.z+b.z+w.z)/3 };
-  return { x:(a.x+w.x)/2, y:(a.y+w.y)/2, z:(a.z+w.z)/2 };
+  if(!w) return null;
+  if(a && b) return { x:(a.x+b.x+w.x)/3, y:(a.y+b.y+w.y)/3, z:(a.z+b.z+w.z)/3 };
+  if(a)      return { x:(a.x+w.x)/2,     y:(a.y+w.y)/2,     z:(a.z+w.z)/2 };
+  return { x:w.x, y:w.y, z:w.z }; // fallback: usa solo polso
 }
 
 // TRIGGER: any left-hand fingertip within 8cm of right palm center
