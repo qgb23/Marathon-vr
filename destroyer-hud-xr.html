@@ -760,22 +760,76 @@ function onXRFrame(time, frame) {
 
 async function startXR() {
   initAudio();
-  try {
-    xrSession = await navigator.xr.requestSession('immersive-ar', {
-      requiredFeatures: ['hand-tracking', 'local'],
-      optionalFeatures: ['bounded-floor', 'dom-overlay'],
-      domOverlay: { root: document.getElementById('hud') }
-    });
-    xrSession.addEventListener('end', () => { xrSession = null; xrRefSpace = null; });
-    xrRefSpace = await xrSession.requestReferenceSpace('local');
-    xrSession.requestAnimationFrame(onXRFrame);
-    document.getElementById('xr-button').style.display = 'none';
-    document.getElementById('gesture-debug').style.display = 'block';
-    await loadDetector();
-    await startPoseDetection();
-  } catch(e) {
-    alert('Errore XR: ' + e.message + '\nAssicurati di aprire il file sul Quest 3 con hand tracking attivo.');
+  const btn = document.getElementById('xr-button');
+  btn.textContent = 'AVVIO...';
+  btn.disabled = true;
+
+  // Try immersive-ar first, fallback to immersive-vr
+  const modes = [
+    {
+      mode: 'immersive-ar',
+      opts: {
+        requiredFeatures: ['local'],
+        optionalFeatures: ['hand-tracking', 'dom-overlay'],
+        domOverlay: { root: document.getElementById('hud') }
+      }
+    },
+    {
+      mode: 'immersive-ar',
+      opts: {
+        requiredFeatures: ['local'],
+        optionalFeatures: ['hand-tracking']
+      }
+    },
+    {
+      mode: 'immersive-vr',
+      opts: {
+        requiredFeatures: ['local'],
+        optionalFeatures: ['hand-tracking', 'dom-overlay'],
+        domOverlay: { root: document.getElementById('hud') }
+      }
+    },
+    {
+      mode: 'immersive-vr',
+      opts: {
+        requiredFeatures: ['local'],
+        optionalFeatures: ['hand-tracking']
+      }
+    }
+  ];
+
+  let lastErr = null;
+  for (const { mode, opts } of modes) {
+    try {
+      const supported = await navigator.xr.isSessionSupported(mode).catch(() => false);
+      if (!supported) continue;
+      xrSession = await navigator.xr.requestSession(mode, opts);
+      xrSession.addEventListener('end', () => {
+        xrSession = null; xrRefSpace = null;
+        btn.textContent = 'ENTRA IN VR';
+        btn.disabled = false;
+        btn.style.display = 'block';
+      });
+      xrRefSpace = await xrSession.requestReferenceSpace('local');
+      xrSession.requestAnimationFrame(onXRFrame);
+      btn.style.display = 'none';
+      document.getElementById('gesture-debug').style.display = 'block';
+      await loadDetector();
+      await startPoseDetection();
+      return;
+    } catch(e) {
+      lastErr = e;
+      continue;
+    }
   }
+
+  // All modes failed
+  btn.textContent = 'ENTRA IN VR';
+  btn.disabled = false;
+  const msg = lastErr ? lastErr.message : 'sconosciuto';
+  document.getElementById('gesture-debug').style.display = 'block';
+  document.getElementById('gesture-debug').innerHTML =
+    'ERRORE XR:<br>' + msg + '<br><br>Apri chrome://flags sul Quest<br>e abilita WebXR';
 }
 
 // ===== BOOT SEQUENCE =====
@@ -795,7 +849,10 @@ window.addEventListener('load', async () => {
       document.getElementById('xr-button').style.display = 'block';
       document.getElementById('xr-button').addEventListener('click', startXR);
     } else {
-      document.getElementById('novr').style.display = 'flex';
+      // Show button anyway — let startXR handle the error with details
+      document.getElementById('xr-button').style.display = 'block';
+      document.getElementById('xr-button').textContent = 'PROVA COMUNQUE';
+      document.getElementById('xr-button').addEventListener('click', startXR);
     }
   } else {
     document.getElementById('novr').style.display = 'flex';
