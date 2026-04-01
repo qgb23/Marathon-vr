@@ -2,95 +2,637 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>XR Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marathon — Destroyer Helmet</title>
 <style>
-body { background:#000; color:#0ff; font-family:monospace; padding:20px; font-size:13px; }
-#log { line-height:2; margin-bottom:20px; }
-button { background:transparent; border:1px solid #0ff; color:#0ff; font-family:monospace; font-size:13px; padding:10px 20px; cursor:pointer; margin:6px; display:block; width:100%; }
-canvas { display:none; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; background:#000; overflow:hidden; font-family:'Courier New', monospace; }
+
+canvas#glcanvas { position:fixed; inset:0; width:100%; height:100%; }
+
+/* ======= BOOT ======= */
+#boot {
+  position:fixed; inset:0; background:#000;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:9999; color:#ff2afc;
+}
+.b-sub { font-size:10px; letter-spacing:4px; color:#00e8ff; margin-bottom:24px; opacity:0; animation:fi 0.4s 0.4s forwards; }
+.b-title { font-size:32px; letter-spacing:10px; color:#ff2afc; margin-bottom:44px; opacity:0; animation:fi 0.4s 0.9s forwards; }
+.b-line { font-size:10px; letter-spacing:2px; color:#00e8ff; margin:5px 0; display:flex; align-items:center; gap:8px; opacity:0; }
+.b-line:nth-child(1){animation:fi 0.3s 1.4s forwards;}
+.b-line:nth-child(2){animation:fi 0.3s 1.8s forwards;}
+.b-line:nth-child(3){animation:fi 0.3s 2.2s forwards;}
+.b-line:nth-child(4){animation:fi 0.3s 2.6s forwards;}
+.b-line:nth-child(5){animation:fi 0.3s 3.0s forwards;}
+.b-dot { width:5px; height:5px; border-radius:50%; background:#ff2afc; flex-shrink:0; }
+.b-barwrap { width:280px; height:2px; background:#1a001a; margin-top:36px; opacity:0; animation:fi 0.3s 3.2s forwards; }
+.b-bar { height:100%; width:0; background:#ff2afc; animation:lb 1s 3.4s forwards; }
+.b-ready { font-size:10px; letter-spacing:5px; color:#ff2afc; margin-top:16px; opacity:0; animation:fi 0.5s 4.5s forwards; }
+@keyframes fi { to { opacity:1; } }
+@keyframes lb { to { width:100%; } }
+
+/* ======= HUD ======= */
+#hud {
+  position:fixed; inset:0; pointer-events:none;
+  opacity:0; transition:opacity 0.8s;
+  z-index:100;
+}
+#hud.visible { opacity:1; }
+
+/* Compass */
+#compass {
+  position:absolute; top:16px; left:50%; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.c-strip {
+  width:280px; height:26px; overflow:hidden; position:relative;
+}
+.c-track {
+  display:flex; align-items:flex-end; position:absolute; top:0; left:0;
+  transition:transform 0.08s linear;
+}
+.c-tick { width:18px; display:flex; flex-direction:column; align-items:center; gap:1px; }
+.c-tick .lbl { font-size:10px; color:#00e8ff; letter-spacing:1px; font-weight:bold; line-height:1; }
+.c-tick .bar { background:#00e8ff; }
+.c-tick.maj .bar { width:1px; height:8px; opacity:0.9; }
+.c-tick.min .bar { width:1px; height:4px; opacity:0.4; }
+.c-tick.min .lbl { visibility:hidden; }
+.c-needle {
+  position:absolute; left:50%; top:0; transform:translateX(-50%);
+  width:1px; height:100%; background:#ff2afc;
+}
+.c-notch {
+  width:0; height:0;
+  border-left:5px solid transparent; border-right:5px solid transparent;
+  border-top:6px solid #ff2afc;
+}
+.c-hdg { font-size:12px; color:#ff2afc; letter-spacing:3px; line-height:1; }
+.c-deg { font-size:9px; color:#00e8ff; letter-spacing:2px; opacity:0.7; }
+
+/* ======= ABILITY OVERLAY ======= */
+#ability {
+  position:absolute; inset:0;
+  opacity:0; transition:opacity 0.25s;
+  pointer-events:none;
+}
+#ability.on { opacity:1; }
+
+.a-tint { position:absolute; inset:0; background:rgba(255,30,200,0.07); }
+.a-scanlines {
+  position:absolute; inset:0;
+  background:repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,30,200,0.02) 3px, rgba(255,30,200,0.02) 4px);
+}
+
+/* Side frames */
+.sf {
+  position:absolute; top:0; bottom:0; width:88px;
+  display:flex; align-items:stretch;
+}
+.sf.L { left:0; }
+.sf.R { right:0; }
+.sf svg { width:100%; height:100%; }
+
+/* Top center HUD */
+.top-hud {
+  position:absolute; top:14%; left:50%; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+}
+.row { display:flex; align-items:center; gap:10px; }
+.segs { display:flex; gap:2px; }
+.seg {
+  width:17px; height:9px;
+  border:1px solid #ff2afc;
+}
+.seg.on { background:#ffee00; border-color:#ffee00; }
+.seg.dim { background:rgba(255,238,0,0.3); border-color:#ffee00; }
+.vdiv { width:2px; height:13px; background:#ff2afc; }
+.run-num { font-size:9px; color:#ff2afc; letter-spacing:2px; }
+.dot-row { display:flex; gap:5px; align-items:center; }
+.dot { width:3px; height:3px; background:#ff2afc; opacity:0.5; }
+.dot.hi { width:4px; height:4px; opacity:1; }
+
+/* Circular indicators */
+.circ-row {
+  position:absolute; top:26%;
+  display:flex; gap:26px;
+}
+.circ-row.L { left:92px; }
+.circ-row.R { right:92px; }
+
+/* Big crosshairs */
+.xhair {
+  position:absolute; top:50%; transform:translateY(-50%);
+}
+.xhair.L { left:92px; }
+.xhair.R { right:92px; }
+
+/* Scan corners */
+.sc { position:absolute; width:38px; height:38px; }
+.sc.TL { top:18%; left:16%; }
+.sc.TR { top:18%; right:16%; }
+.sc.BL { bottom:18%; left:16%; }
+.sc.BR { bottom:18%; right:16%; }
+
+/* Enemy box */
+#ebox {
+  position:absolute;
+  border:2px solid #ff2222;
+  display:none;
+  pointer-events:none;
+}
+#ebox.on { display:block; }
+#ebox::before { content:'NEMICO'; position:absolute; top:-17px; left:0; font-size:8px; color:#ff2222; letter-spacing:1px; }
+#ebox::after {
+  content:'';
+  position:absolute; inset:-4px;
+  border:1px solid rgba(255,34,34,0.25);
+}
+
+/* ======= ENTER BUTTON ======= */
+#enterbtn {
+  position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
+  background:transparent; border:1px solid #ff2afc;
+  color:#ff2afc; font-family:'Courier New',monospace;
+  font-size:12px; letter-spacing:3px;
+  padding:12px 32px; cursor:pointer; z-index:200;
+  display:none;
+}
+#enterbtn:disabled { opacity:0.5; }
+
+/* Debug */
+#dbg {
+  position:fixed; bottom:16px; right:16px;
+  font-size:9px; color:rgba(0,232,255,0.4);
+  letter-spacing:1px; line-height:2;
+  z-index:200; text-align:right;
+  display:none;
+}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="log">Checking...<br></div>
-<div id="buttons"></div>
+
+<!-- WebGL canvas — required for XR -->
+<canvas id="glcanvas"></canvas>
+
+<!-- BOOT -->
+<div id="boot">
+  <div class="b-sub">BUNGIE // MARATHON SYSTEMS</div>
+  <div class="b-title">DESTROYER</div>
+  <div style="display:flex;flex-direction:column;align-items:flex-start;">
+    <div class="b-line"><div class="b-dot"></div>NEURAL LINK............OK</div>
+    <div class="b-line"><div class="b-dot"></div>SHIELD ARRAY...........OK</div>
+    <div class="b-line"><div class="b-dot"></div>SENSOR SUITE...........OK</div>
+    <div class="b-line"><div class="b-dot"></div>HAND TRACKING..........OK</div>
+    <div class="b-line"><div class="b-dot"></div>HUD CALIBRATING.......</div>
+  </div>
+  <div class="b-barwrap"><div class="b-bar"></div></div>
+  <div class="b-ready">SYSTEM READY</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+
+  <!-- Compass -->
+  <div id="compass">
+    <div class="c-strip">
+      <div class="c-track" id="ctrack"></div>
+      <div class="c-needle"></div>
+    </div>
+    <div class="c-notch"></div>
+    <div class="c-hdg" id="chdg">E</div>
+    <div class="c-deg" id="cdeg">090°</div>
+  </div>
+
+  <!-- Ability overlay -->
+  <div id="ability">
+    <div class="a-tint"></div>
+    <div class="a-scanlines"></div>
+
+    <!-- Left frame -->
+    <div class="sf L">
+      <svg viewBox="0 0 88 600" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="82" height="596" stroke="#ff2afc" stroke-width="1.5" stroke-dasharray="8 5" opacity="0.65"/>
+        <line x1="2" y1="90" x2="28" y2="90" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="2" y1="510" x2="28" y2="510" stroke="#ff2afc" stroke-width="1.5"/>
+        <rect x="6" y="6" width="18" height="18" stroke="#ff2afc" stroke-width="1" opacity="0.45"/>
+        <rect x="6" y="576" width="18" height="18" stroke="#ff2afc" stroke-width="1" opacity="0.45"/>
+        <rect x="14" y="276" width="12" height="4" fill="#ff2afc" opacity="0.9"/>
+        <rect x="18" y="272" width="4" height="12" fill="#ff2afc" opacity="0.9"/>
+        <rect x="14" y="310" width="12" height="4" fill="#ff2afc" opacity="0.45"/>
+        <rect x="18" y="306" width="4" height="12" fill="#ff2afc" opacity="0.45"/>
+        <circle cx="44" cy="180" r="2" fill="#ff2afc" opacity="0.35"/>
+        <circle cx="44" cy="420" r="2" fill="#ff2afc" opacity="0.35"/>
+      </svg>
+    </div>
+
+    <!-- Right frame -->
+    <div class="sf R">
+      <svg viewBox="0 0 88 600" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="2" width="82" height="596" stroke="#ff2afc" stroke-width="1.5" stroke-dasharray="8 5" opacity="0.65"/>
+        <line x1="86" y1="90" x2="60" y2="90" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="86" y1="510" x2="60" y2="510" stroke="#ff2afc" stroke-width="1.5"/>
+        <rect x="64" y="6" width="18" height="18" stroke="#ff2afc" stroke-width="1" opacity="0.45"/>
+        <rect x="64" y="576" width="18" height="18" stroke="#ff2afc" stroke-width="1" opacity="0.45"/>
+        <rect x="62" y="276" width="12" height="4" fill="#ff2afc" opacity="0.9"/>
+        <rect x="66" y="272" width="4" height="12" fill="#ff2afc" opacity="0.9"/>
+        <rect x="62" y="310" width="12" height="4" fill="#ff2afc" opacity="0.45"/>
+        <rect x="66" y="306" width="4" height="12" fill="#ff2afc" opacity="0.45"/>
+        <circle cx="44" cy="180" r="2" fill="#ff2afc" opacity="0.35"/>
+        <circle cx="44" cy="420" r="2" fill="#ff2afc" opacity="0.35"/>
+      </svg>
+    </div>
+
+    <!-- Top center HUD elements -->
+    <div class="top-hud">
+      <div class="row">
+        <!-- Left circles -->
+        <svg width="60" height="22" viewBox="0 0 60 22" fill="none">
+          <circle cx="11" cy="11" r="9" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="11" cy="11" r="4" stroke="#ff2afc" stroke-width="1" opacity="0.4"/>
+          <line x1="11" y1="2" x2="11" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="20" y1="11" x2="16" y2="11" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="42" cy="11" r="9" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="42" cy="11" r="4" stroke="#ff2afc" stroke-width="1" opacity="0.4"/>
+          <line x1="42" y1="2" x2="42" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="51" y1="11" x2="47" y2="11" stroke="#ff2afc" stroke-width="1.5"/>
+        </svg>
+        <!-- Bars -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+          <div class="row" style="gap:5px;">
+            <div class="segs" id="sl"></div>
+            <div class="vdiv"></div>
+            <div class="run-num">01</div>
+            <div class="vdiv"></div>
+            <div class="segs" id="sr"></div>
+          </div>
+          <div class="segs" id="sc"></div>
+        </div>
+        <!-- Right circles -->
+        <svg width="60" height="22" viewBox="0 0 60 22" fill="none">
+          <circle cx="18" cy="11" r="9" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="18" cy="11" r="4" stroke="#ff2afc" stroke-width="1" opacity="0.4"/>
+          <line x1="18" y1="2" x2="18" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="9" y1="11" x2="13" y2="11" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="49" cy="11" r="9" stroke="#ff2afc" stroke-width="1.5"/>
+          <circle cx="49" cy="11" r="4" stroke="#ff2afc" stroke-width="1" opacity="0.4"/>
+          <line x1="49" y1="2" x2="49" y2="6" stroke="#ff2afc" stroke-width="1.5"/>
+          <line x1="40" y1="11" x2="44" y2="11" stroke="#ff2afc" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="dot-row">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot hi"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+    </div>
+
+    <!-- Crosshairs -->
+    <div class="xhair L">
+      <svg width="58" height="58" viewBox="0 0 58 58" fill="none">
+        <rect x="1" y="1" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="42" y="1" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="1" y="42" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="42" y="42" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <line x1="29" y1="10" x2="29" y2="20" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="29" y1="38" x2="29" y2="48" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="10" y1="29" x2="20" y2="29" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="38" y1="29" x2="48" y2="29" stroke="#ff2afc" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="xhair R">
+      <svg width="58" height="58" viewBox="0 0 58 58" fill="none">
+        <rect x="1" y="1" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="42" y="1" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="1" y="42" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <rect x="42" y="42" width="15" height="15" stroke="#ff2afc" stroke-width="2"/>
+        <line x1="29" y1="10" x2="29" y2="20" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="29" y1="38" x2="29" y2="48" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="10" y1="29" x2="20" y2="29" stroke="#ff2afc" stroke-width="1.5"/>
+        <line x1="38" y1="29" x2="48" y2="29" stroke="#ff2afc" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <!-- Scan corners -->
+    <div class="sc TL"><svg width="38" height="38" viewBox="0 0 38 38" fill="none"><path d="M2 19 L2 2 L19 2" stroke="#ff2afc" stroke-width="2"/></svg></div>
+    <div class="sc TR"><svg width="38" height="38" viewBox="0 0 38 38" fill="none"><path d="M36 19 L36 2 L19 2" stroke="#ff2afc" stroke-width="2"/></svg></div>
+    <div class="sc BL"><svg width="38" height="38" viewBox="0 0 38 38" fill="none"><path d="M2 19 L2 36 L19 36" stroke="#ff2afc" stroke-width="2"/></svg></div>
+    <div class="sc BR"><svg width="38" height="38" viewBox="0 0 38 38" fill="none"><path d="M36 19 L36 36 L19 36" stroke="#ff2afc" stroke-width="2"/></svg></div>
+
+    <!-- Enemy detection box -->
+    <div id="ebox"></div>
+  </div><!-- end #ability -->
+
+</div><!-- end #hud -->
+
+<button id="enterbtn">ENTRA IN VR</button>
+<div id="dbg">
+  <div id="d-l">SX: —</div>
+  <div id="d-r">DX: —</div>
+  <div id="d-a">ABILITÀ: OFF</div>
+</div>
+
 <script>
-const log = document.getElementById('log');
-function print(msg) { log.innerHTML += msg + '<br>'; }
+// ============================================================
+// COMPASS SETUP
+// ============================================================
+const TICKS = [];
+for (let d = -360; d <= 720; d += 22.5) {
+  const norm = ((d % 360) + 360) % 360;
+  const labels = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SO',270:'O',315:'NO'};
+  TICKS.push({ d, label: labels[norm] || '' });
+}
+const TW = 18;
+const ctrack = document.getElementById('ctrack');
+TICKS.forEach(t => {
+  const el = document.createElement('div');
+  el.className = 'c-tick ' + (t.label ? 'maj' : 'min');
+  el.innerHTML = `<span class="lbl">${t.label}</span><div class="bar"></div>`;
+  ctrack.appendChild(el);
+});
 
-// Setup WebGL context compatible with XR
-const canvas = document.getElementById('c');
-const gl = canvas.getContext('webgl', { xrCompatible: true });
-if (!gl) print('<span style="color:#f44">✗ WebGL not available</span>');
-else print('✓ WebGL OK');
+function hdgLabel(d) {
+  d = ((d%360)+360)%360;
+  if(d<22)return'N'; if(d<67)return'NE'; if(d<112)return'E';
+  if(d<157)return'SE'; if(d<202)return'S'; if(d<247)return'SO';
+  if(d<292)return'O'; if(d<337)return'NO'; return'N';
+}
 
-async function trySession(mode, req, opt) {
-  print('→ ' + mode + ' req:' + req.join(',') + ' opt:' + opt.join(','));
+function updateCompass(deg) {
+  deg = ((deg%360)+360)%360;
+  const W = 280;
+  const total = TICKS.length * TW;
+  const px = (deg / 360) * total;
+  ctrack.style.transform = `translateX(${W/2 - TW/2 - px}px)`;
+  document.getElementById('chdg').textContent = hdgLabel(deg);
+  document.getElementById('cdeg').textContent = String(Math.round(deg)).padStart(3,'0') + '°';
+}
+updateCompass(90);
+
+// ============================================================
+// SEGS INIT
+// ============================================================
+function makeSegs(id, total, on, dim) {
+  const el = document.getElementById(id);
+  for(let i=0;i<total;i++){
+    const s = document.createElement('div');
+    s.className = 'seg' + (i<on?' on':i<on+dim?' dim':'');
+    el.appendChild(s);
+  }
+}
+makeSegs('sl', 9, 7, 0);
+makeSegs('sr', 9, 6, 1);
+makeSegs('sc', 3, 3, 0);
+
+// ============================================================
+// AUDIO
+// ============================================================
+let actx = null;
+function initAudio() { if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); }
+
+function playAbility() {
+  if(!actx) return;
+  const t = actx.currentTime;
+  [[200,1800,0.3,0],[80,40,0.18,0.2],[2400,2400,0.12,0.1]].forEach(([f0,f1,g,delay],i) => {
+    const o = actx.createOscillator();
+    const gn = actx.createGain();
+    if(i===1) o.type='square';
+    o.connect(gn); gn.connect(actx.destination);
+    o.frequency.setValueAtTime(f0, t+delay);
+    o.frequency.exponentialRampToValueAtTime(f1, t+delay+0.35);
+    gn.gain.setValueAtTime(g, t+delay);
+    gn.gain.exponentialRampToValueAtTime(0.001, t+delay+0.6);
+    o.start(t+delay); o.stop(t+delay+0.7);
+  });
+}
+
+// ============================================================
+// ABILITY STATE
+// ============================================================
+let abilityOn = false;
+const abilityEl = document.getElementById('ability');
+
+function toggleAbility() {
+  abilityOn = !abilityOn;
+  abilityEl.classList.toggle('on', abilityOn);
+  document.getElementById('d-a').textContent = 'ABILITÀ: ' + (abilityOn?'ON':'OFF');
+  if(abilityOn) playAbility();
+}
+
+// Desktop: spacebar or click
+document.addEventListener('keydown', e => { if(e.code==='Space'){ initAudio(); toggleAbility(); }});
+document.getElementById('hud').addEventListener('click', () => { if(!xrSession){ initAudio(); toggleAbility(); }});
+
+// ============================================================
+// POSE DETECTION (enemy box)
+// ============================================================
+let detector = null;
+let videoEl = null;
+const ebox = document.getElementById('ebox');
+
+async function initPose() {
+  if(typeof poseDetection === 'undefined') return;
   try {
-    // Make GL context XR compatible first
-    await gl.makeXRCompatible();
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+    );
+  } catch(e) { console.warn('pose init failed', e); }
+}
 
-    const sess = await navigator.xr.requestSession(mode, {
-      requiredFeatures: req,
-      optionalFeatures: opt
-    });
-    print('<span style="color:#0f0">✓ Session created!</span>');
+async function startCamera() {
+  if(!detector) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    videoEl = document.createElement('video');
+    videoEl.srcObject = stream; videoEl.autoplay = true;
+    videoEl.playsInline = true; videoEl.width = 640; videoEl.height = 480;
+    videoEl.style.display = 'none';
+    document.body.appendChild(videoEl);
+    videoEl.onloadeddata = poseLoop;
+  } catch(e) { console.warn('camera fail', e); }
+}
 
-    // Create XR-compatible WebGL layer — THIS is what makes Quest stop loading
-    const layer = new XRWebGLLayer(sess, gl);
-    await sess.updateRenderState({ baseLayer: layer });
-    print('✓ WebGL layer attached');
+async function poseLoop() {
+  if(!detector || !videoEl) return;
+  if(abilityOn) {
+    try {
+      const poses = await detector.estimatePoses(videoEl);
+      if(poses.length > 0) {
+        const kps = poses[0].keypoints.filter(k => k.score > 0.3);
+        if(kps.length > 4) {
+          const xs = kps.map(k=>k.x), ys = kps.map(k=>k.y);
+          const pad = 20;
+          const sx = window.innerWidth/640, sy = window.innerHeight/480;
+          ebox.style.left = (Math.min(...xs)*sx - pad) + 'px';
+          ebox.style.top  = (Math.min(...ys)*sy - pad) + 'px';
+          ebox.style.width  = ((Math.max(...xs)-Math.min(...xs))*sx + pad*2) + 'px';
+          ebox.style.height = ((Math.max(...ys)-Math.min(...ys))*sy + pad*2) + 'px';
+          ebox.classList.add('on');
+        } else { ebox.classList.remove('on'); }
+      } else { ebox.classList.remove('on'); }
+    } catch(e) {}
+  } else { ebox.classList.remove('on'); }
+  requestAnimationFrame(poseLoop);
+}
 
-    const refSpaceName = req.includes('local-floor') ? 'local-floor' : 'local';
-    const ref = await sess.requestReferenceSpace(refSpaceName);
-    print('✓ Reference space: ' + refSpaceName);
+// ============================================================
+// WEBXR
+// ============================================================
+let xrSession = null;
+let xrRefSpace = null;
+let glLayer = null;
 
-    let frameCount = 0;
-    sess.requestAnimationFrame(function frame(t, xrFrame) {
-      frameCount++;
-      if (frameCount === 1) print('<span style="color:#0f0">✓ FIRST FRAME OK — combo funziona!</span>');
-      
-      // Clear screen so Quest knows we're rendering
-      const pose = xrFrame.getViewerPose(ref);
-      if (pose) {
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-        gl.clearColor(0, 0.05, 0.05, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      }
-      if (frameCount < 10) sess.requestAnimationFrame(frame);
-      else {
-        print('✓ 10 frames rendered — ending test session');
-        sess.end();
-      }
-    });
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
 
-  } catch(e) {
-    print('<span style="color:#f44">✗ ' + e.name + ': ' + e.message + '</span>');
+// Simple WebGL clear program — keeps Quest happy
+function glClear(r,g,b,a) {
+  gl.clearColor(r,g,b,a);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+}
+
+// Hand gesture helpers
+function isFist(hand) {
+  if(!hand) return false;
+  const tips = ['index-finger-tip','middle-finger-tip','ring-finger-tip','pinky-finger-tip'];
+  const bases = ['index-finger-metacarpal','middle-finger-metacarpal','ring-finger-metacarpal','pinky-finger-metacarpal'];
+  let count = 0;
+  for(let i=0;i<tips.length;i++){
+    try {
+      const tp = hand.get(tips[i]).transform.position;
+      const bp = hand.get(bases[i]).transform.position;
+      const d = Math.hypot(tp.x-bp.x, tp.y-bp.y, tp.z-bp.z);
+      if(d < 0.065) count++;
+    } catch(e){}
+  }
+  return count >= 3;
+}
+
+function isPinch(hand) {
+  if(!hand) return false;
+  try {
+    const th = hand.get('thumb-tip').transform.position;
+    const ix = hand.get('index-finger-tip').transform.position;
+    return Math.hypot(th.x-ix.x, th.y-ix.y, th.z-ix.z) < 0.028;
+  } catch(e){ return false; }
+}
+
+let prevPinchR = false;
+let prevFistL  = false;
+
+function onXRFrame(t, frame) {
+  xrSession.requestAnimationFrame(onXRFrame);
+
+  // Bind framebuffer and clear — REQUIRED for Quest to not hang
+  gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+  if(abilityOn) {
+    glClear(0.12, 0, 0.1, 0.0); // slight tint when ability on
+  } else {
+    glClear(0, 0, 0, 0); // transparent passthrough
+  }
+
+  // Compass from head orientation
+  const pose = frame.getViewerPose(xrRefSpace);
+  if(pose) {
+    const q = pose.transform.orientation;
+    const yaw = Math.atan2(2*(q.w*q.y + q.z*q.x), 1-2*(q.y*q.y+q.x*q.x));
+    updateCompass(((-yaw*180/Math.PI)+360)%360);
+  }
+
+  // Hand tracking
+  for(const src of xrSession.inputSources) {
+    if(!src.hand) continue;
+    if(src.handedness === 'right') {
+      const pinch = isPinch(src.hand);
+      document.getElementById('d-r').textContent = 'DX: ' + (pinch?'PINCH':'—');
+      if(pinch && !prevPinchR) { initAudio(); toggleAbility(); }
+      prevPinchR = pinch;
+    }
+    if(src.handedness === 'left') {
+      const fist = isFist(src.hand);
+      document.getElementById('d-l').textContent = 'SX: ' + (fist?'PUGNO':'—');
+      // Shield reserved for future
+      prevFistL = fist;
+    }
   }
 }
 
-async function init() {
-  if (!navigator.xr) { print('✗ No WebXR'); return; }
-  print('✓ WebXR available');
+async function startXR() {
+  initAudio();
+  const btn = document.getElementById('enterbtn');
+  btn.textContent = 'AVVIO...'; btn.disabled = true;
 
-  const tests = [
-    { label: 'VR + local + hand optional', mode: 'immersive-vr', req: ['local'], opt: ['hand-tracking'] },
-    { label: 'VR + local-floor + hand optional', mode: 'immersive-vr', req: ['local-floor'], opt: ['hand-tracking'] },
-    { label: 'VR + local only (no hand)', mode: 'immersive-vr', req: ['local'], opt: [] },
-    { label: 'AR + local + hand optional', mode: 'immersive-ar', req: ['local'], opt: ['hand-tracking'] },
-    { label: 'AR + local only', mode: 'immersive-ar', req: ['local'], opt: [] },
+  try {
+    await gl.makeXRCompatible();
+  } catch(e) { console.warn('makeXRCompatible failed', e); }
+
+  // Try AR first, then VR
+  const attempts = [
+    ['immersive-ar', { requiredFeatures:['local'], optionalFeatures:['hand-tracking','dom-overlay'], domOverlay:{ root:document.getElementById('hud') } }],
+    ['immersive-ar', { requiredFeatures:['local'], optionalFeatures:['hand-tracking'] }],
+    ['immersive-vr', { requiredFeatures:['local'], optionalFeatures:['hand-tracking','dom-overlay'], domOverlay:{ root:document.getElementById('hud') } }],
+    ['immersive-vr', { requiredFeatures:['local'], optionalFeatures:['hand-tracking'] }],
+    ['immersive-vr', { requiredFeatures:['local-floor'], optionalFeatures:['hand-tracking'] }],
   ];
 
-  for (const t of tests) {
-    const supported = await navigator.xr.isSessionSupported(t.mode).catch(() => false);
-    const b = document.createElement('button');
-    b.textContent = (supported ? '✓ ' : '? ') + t.label;
-    b.onclick = () => trySession(t.mode, t.req, t.opt);
-    document.getElementById('buttons').appendChild(b);
+  for(const [mode, opts] of attempts) {
+    try {
+      const ok = await navigator.xr.isSessionSupported(mode).catch(()=>false);
+      if(!ok) continue;
+      xrSession = await navigator.xr.requestSession(mode, opts);
+
+      // Attach WebGL layer — THIS fixes the infinite loading
+      glLayer = new XRWebGLLayer(xrSession, gl);
+      await xrSession.updateRenderState({ baseLayer: glLayer });
+
+      const rsName = opts.requiredFeatures.includes('local-floor') ? 'local-floor' : 'local';
+      xrRefSpace = await xrSession.requestReferenceSpace(rsName);
+
+      xrSession.addEventListener('end', () => {
+        xrSession = null; xrRefSpace = null; glLayer = null;
+        btn.textContent = 'ENTRA IN VR'; btn.disabled = false; btn.style.display = 'block';
+      });
+
+      xrSession.requestAnimationFrame(onXRFrame);
+      btn.style.display = 'none';
+      document.getElementById('dbg').style.display = 'block';
+
+      // Start pose detection in background
+      initPose().then(startCamera);
+      return;
+
+    } catch(e) { continue; }
   }
+
+  btn.textContent = 'ENTRA IN VR'; btn.disabled = false;
+  document.getElementById('dbg').innerHTML = 'Nessuna sessione XR disponibile.<br>Apri chrome://flags e abilita WebXR';
+  document.getElementById('dbg').style.display = 'block';
 }
 
-init();
+// ============================================================
+// BOOT → APP REVEAL
+// ============================================================
+window.addEventListener('load', async () => {
+  setTimeout(() => {
+    document.getElementById('boot').style.transition = 'opacity 0.8s';
+    document.getElementById('boot').style.opacity = '0';
+    setTimeout(() => { document.getElementById('boot').style.display = 'none'; }, 800);
+    document.getElementById('hud').classList.add('visible');
+    document.getElementById('enterbtn').style.display = 'block';
+  }, 5100);
+
+  if(navigator.xr) {
+    document.getElementById('enterbtn').addEventListener('click', startXR);
+  } else {
+    setTimeout(() => {
+      document.getElementById('enterbtn').textContent = 'WebXR NON DISPONIBILE';
+      document.getElementById('enterbtn').disabled = true;
+    }, 5100);
+  }
+});
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 </body>
 </html>
