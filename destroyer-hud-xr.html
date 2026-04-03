@@ -2,602 +2,463 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>VR Test Grid — Meta Quest 3</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;400;600&display=swap');
+  :root{--green:#00ff88;--amber:#ffaa00;--red:#ff4455;--panel:rgba(8,8,8,0.88);--border:rgba(255,255,255,0.09);}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:100%;height:100%;background:#000;color:#fff;font-family:'Space Grotesk',sans-serif;overflow:hidden;touch-action:none;}
 
-  :root {
-    --green: #00ff88;
-    --amber: #ffaa00;
-    --red: #ff4455;
-    --dim: #1a1a1a;
-    --panel: rgba(10,10,10,0.82);
-    --border: rgba(255,255,255,0.08);
-  }
+  #hud{position:fixed;top:0;left:0;right:0;z-index:100;height:52px;background:rgba(0,0,0,0.92);border-bottom:1px solid var(--border);padding:0 14px;display:flex;align-items:center;gap:12px;backdrop-filter:blur(10px);transition:transform 0.3s ease;}
+  #hud.hidden{transform:translateY(-100%);}
+  .hud-logo{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green);letter-spacing:.18em;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
+  .hud-sep{width:1px;height:26px;background:var(--border);flex-shrink:0;}
+  .hud-ctrl{display:flex;align-items:center;gap:7px;}
+  .hud-ctrl label{font-size:10px;color:#666;white-space:nowrap;text-transform:uppercase;letter-spacing:.06em;}
+  .hud-val{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:#fff;min-width:38px;text-align:right;}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100px;height:3px;background:#2a2a2a;border-radius:2px;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--green);cursor:pointer;}
+  select{background:#0e0e0e;border:1px solid #2a2a2a;color:#fff;font-family:'Space Grotesk',sans-serif;font-size:11px;padding:3px 7px;border-radius:4px;outline:none;cursor:pointer;}
+  select:hover{border-color:#444;}
+  .hud-btn{padding:4px 10px;background:transparent;border:1px solid #2a2a2a;color:#777;font-family:'JetBrains Mono',monospace;font-size:10px;border-radius:4px;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;}
+  .hud-btn:hover{border-color:#555;color:#bbb;}
+  .hud-btn.active{border-color:var(--green);color:var(--green);}
+  #btn-fs{margin-left:auto;padding:5px 12px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.3);color:var(--green);font-family:'JetBrains Mono',monospace;font-size:11px;border-radius:5px;cursor:pointer;flex-shrink:0;transition:background .15s;letter-spacing:.05em;}
+  #btn-fs:hover{background:rgba(0,255,136,.18);}
+  #status-pill{padding:4px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;transition:all .3s;white-space:nowrap;flex-shrink:0;}
+  .pill-ok{background:rgba(0,255,136,.12);color:var(--green);border:1px solid rgba(0,255,136,.25);}
+  .pill-warn{background:rgba(255,170,0,.12);color:var(--amber);border:1px solid rgba(255,170,0,.25);}
+  .pill-bad{background:rgba(255,68,85,.12);color:var(--red);border:1px solid rgba(255,68,85,.25);}
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  #main-canvas{display:block;position:fixed;top:52px;left:0;width:100vw;height:calc(100vh - 52px);cursor:crosshair;}
+  body.fs-active #main-canvas{top:0;height:100vh;}
 
-  body {
-    background: #000;
-    color: #fff;
-    font-family: 'Space Grotesk', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
+  #info-bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 16px;display:flex;gap:18px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;pointer-events:none;white-space:nowrap;flex-wrap:wrap;justify-content:center;transition:opacity .3s;z-index:99;}
+  #info-bar.hidden{opacity:0;}
+  .info-item span{color:#aaa;}
 
-  /* ── HUD Controls ── */
-  #hud {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    background: rgba(0,0,0,0.9);
-    border-bottom: 1px solid var(--border);
-    padding: 10px 20px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: center;
-    backdrop-filter: blur(12px);
-  }
+  #ht-badge{position:fixed;top:60px;right:12px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#444;z-index:99;pointer-events:none;transition:color .3s;}
+  #ht-badge.active{color:var(--green);border-color:rgba(0,255,136,.25);}
 
-  .hud-logo {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--green);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
+  #coords-tip{position:fixed;padding:3px 8px;background:rgba(0,0,0,.85);border:1px solid var(--border);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--green);pointer-events:none;display:none;z-index:200;}
 
-  .hud-sep { width: 1px; height: 28px; background: var(--border); }
-
-  .hud-ctrl {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .hud-ctrl label {
-    font-size: 11px;
-    color: #888;
-    white-space: nowrap;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  .hud-val {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    font-weight: 700;
-    color: #fff;
-    min-width: 36px;
-    text-align: right;
-  }
-
-  input[type=range] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 110px;
-    height: 4px;
-    background: #333;
-    border-radius: 2px;
-    outline: none;
-  }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: var(--green);
-    cursor: pointer;
-  }
-
-  select {
-    background: #111;
-    border: 1px solid #333;
-    color: #fff;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    outline: none;
-    cursor: pointer;
-  }
-  select:hover { border-color: #555; }
-
-  /* ── Status pill ── */
-  #status-pill {
-    margin-left: auto;
-    padding: 5px 14px;
-    border-radius: 999px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    transition: background 0.3s, color 0.3s;
-    white-space: nowrap;
-  }
-  .pill-ok   { background: rgba(0,255,136,0.15); color: var(--green); border: 1px solid rgba(0,255,136,0.3); }
-  .pill-warn { background: rgba(255,170,0,0.15); color: var(--amber); border: 1px solid rgba(255,170,0,0.3); }
-  .pill-bad  { background: rgba(255,68,85,0.15);  color: var(--red);   border: 1px solid rgba(255,68,85,0.3); }
-
-  /* ── Canvas ── */
-  #main-canvas {
-    display: block;
-    width: 100vw;
-    height: calc(100vh - 56px);
-    margin-top: 56px;
-    cursor: crosshair;
-  }
-
-  /* ── Info overlay bottom ── */
-  #info-overlay {
-    position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 20px;
-    display: flex;
-    gap: 20px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #666;
-    backdrop-filter: blur(8px);
-    pointer-events: none;
-    white-space: nowrap;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  .info-item span { color: #fff; }
-
-  /* ── Crosshair cursor indicator ── */
-  #coords-tip {
-    position: fixed;
-    padding: 4px 8px;
-    background: rgba(0,0,0,0.8);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--green);
-    pointer-events: none;
-    display: none;
-    z-index: 200;
-  }
+  #fs-hint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:9px;color:#222;pointer-events:none;z-index:200;display:none;}
+  body.fs-active #fs-hint{display:block;}
 </style>
 </head>
 <body>
 
-<!-- HUD -->
 <div id="hud">
-  <div class="hud-logo">VR·TEST·GRID</div>
+  <div class="hud-logo">VR·GRID·3</div>
   <div class="hud-sep"></div>
-
   <div class="hud-ctrl">
-    <label>Dist. occhi</label>
+    <label>Distanza</label>
     <input type="range" id="dist" min="5" max="80" value="30" step="1">
-    <span class="hud-val" id="dist-out">30 cm</span>
+    <span class="hud-val" id="dist-out">30cm</span>
   </div>
-
+  <div class="hud-sep"></div>
   <div class="hud-ctrl">
     <label>Headset</label>
     <select id="ppd">
-      <option value="25">Quest 3 — 25 ppd</option>
-      <option value="20">Quest 2 — 20 ppd</option>
-      <option value="35">Quest Pro — 35 ppd</option>
-      <option value="40">Custom — 40 ppd</option>
+      <option value="25">Quest 3 · 25ppd</option>
+      <option value="20">Quest 2 · 20ppd</option>
+      <option value="35">Quest Pro · 35ppd</option>
     </select>
   </div>
-
   <div class="hud-ctrl">
-    <label>Modalità</label>
+    <label>Vista</label>
     <select id="mode">
-      <option value="grid">Griglia coord</option>
-      <option value="text">Test testi</option>
-      <option value="patterns">Pattern visivi</option>
-      <option value="all">Tutto insieme</option>
+      <option value="grid">Griglia</option>
+      <option value="text">Testi</option>
+      <option value="patterns">Pattern</option>
+      <option value="all">Tutto</option>
     </select>
   </div>
-
   <div class="hud-ctrl">
-    <label>Griglia</label>
+    <label>Coord</label>
     <select id="gridtype">
-      <option value="deg">Gradi (°)</option>
-      <option value="cm">Centimetri fisici</option>
-      <option value="px">Pixel canvas</option>
+      <option value="deg">Gradi °</option>
+      <option value="cm">Cm fisici</option>
+      <option value="px">Pixel</option>
     </select>
   </div>
-
-  <div id="status-pill" class="pill-ok">NITIDEZZA OTTIMA</div>
+  <div class="hud-sep"></div>
+  <button class="hud-btn" id="btn-ht">HEAD TRACK: OFF</button>
+  <button class="hud-btn" id="btn-reset">RESET CENTRO</button>
+  <div id="status-pill" class="pill-ok">NITIDO</div>
+  <button id="btn-fs">⛶ FULLSCREEN</button>
 </div>
 
-<!-- Canvas principale -->
 <canvas id="main-canvas"></canvas>
 
-<!-- Info bottom -->
-<div id="info-overlay">
+<div id="info-bar">
   <div class="info-item">mm/px: <span id="i-mmpx">—</span></div>
   <div class="info-item">°/px: <span id="i-angpx">—</span></div>
-  <div class="info-item">Indice pixel: <span id="i-pi">—</span></div>
-  <div class="info-item">FOV larghezza: <span id="i-fov">—</span></div>
-  <div class="info-item">Min font leggibile: <span id="i-minfont">—</span></div>
+  <div class="info-item">pixel index: <span id="i-pi">—</span></div>
+  <div class="info-item">FOV w: <span id="i-fov">—</span></div>
+  <div class="info-item">min font: <span id="i-minfont">—</span></div>
+  <div class="info-item">yaw: <span id="i-yaw">0.0°</span></div>
+  <div class="info-item">pitch: <span id="i-pitch">0.0°</span></div>
 </div>
 
-<!-- Tooltip coordinate mouse -->
+<div id="ht-badge">HEAD TRACK: OFF</div>
 <div id="coords-tip"></div>
+<div id="fs-hint">doppio tap → mostra/nascondi HUD</div>
 
 <script>
-const canvas = document.getElementById('main-canvas');
-const ctx    = canvas.getContext('2d');
-const tip    = document.getElementById('coords-tip');
+const canvas   = document.getElementById('main-canvas');
+const ctx      = canvas.getContext('2d');
+const tip      = document.getElementById('coords-tip');
+const htBadge  = document.getElementById('ht-badge');
+const btnHT    = document.getElementById('btn-ht');
+const btnReset = document.getElementById('btn-reset');
+const btnFS    = document.getElementById('btn-fs');
+const hud      = document.getElementById('hud');
+const infoBar  = document.getElementById('info-bar');
 
 let W, H;
+const HUD_H = 52;
+
+// Head tracking state
+let htEnabled  = false;
+let yaw = 0, pitch = 0;
+let yawOff = 0, pitchOff = 0;
+let rawYaw = 0, rawPitch = 0;
+let rafPending = false;
+
+// Fullscreen / HUD state
+let fsActive   = false;
+let hudVisible = true;
+let lastTap    = 0;
+
+// ── Resize ────────────────────────────────────────────
 function resize() {
   W = canvas.width  = window.innerWidth;
-  H = canvas.height = window.innerHeight - 56;
+  H = canvas.height = window.innerHeight - (fsActive ? 0 : HUD_H);
+  canvas.style.top  = (fsActive ? 0 : HUD_H) + 'px';
   draw();
 }
 window.addEventListener('resize', resize);
 
-// ── Controls ──────────────────────────────────────────────────
-const distEl    = document.getElementById('dist');
-const distOut   = document.getElementById('dist-out');
-const ppdEl     = document.getElementById('ppd');
-const modeEl    = document.getElementById('mode');
-const gridEl    = document.getElementById('gridtype');
-const statusPill = document.getElementById('status-pill');
-
-function getParams() {
-  const dist = parseInt(distEl.value);
-  const ppd  = parseInt(ppdEl.value);
-  const FOV_H = 110, FOV_V = 90;
-
-  const physWidthMM  = 2 * dist * 10 * Math.tan(FOV_H * Math.PI / 360);
-  const physHeightMM = 2 * dist * 10 * Math.tan(FOV_V * Math.PI / 360);
-  const mmPerPxW = physWidthMM / W;
-  const mmPerPxH = physHeightMM / H;
-  const mmPerPx  = (mmPerPxW + mmPerPxH) / 2;
-
-  const angPxDeg = Math.atan2(mmPerPxW, dist * 10) * 180 / Math.PI;
-  const angularPxSize = 1 / ppd;
-  const pixelationIndex = angPxDeg / angularPxSize;
-
-  const sharpness = Math.max(0, Math.min(1, 1 - (pixelationIndex - 0.45) / 0.7));
-  const minFont   = Math.max(6, Math.round(10 / (ppd / 25) * (30 / dist)));
-
-  return { dist, ppd, FOV_H, FOV_V, physWidthMM, physHeightMM, mmPerPx, angPxDeg, pixelationIndex, sharpness, minFont };
+// ── Params ────────────────────────────────────────────
+function P() {
+  const dist = parseInt(document.getElementById('dist').value);
+  const ppd  = parseInt(document.getElementById('ppd').value);
+  const FH = 110, FV = 90;
+  const physW  = 2*dist*10*Math.tan(FH*Math.PI/360);
+  const physH  = 2*dist*10*Math.tan(FV*Math.PI/360);
+  const mmpx   = physW / W;
+  const angpx  = Math.atan2(mmpx, dist*10)*180/Math.PI;
+  const pi     = angpx / (1/ppd);
+  const sharp  = Math.max(0, Math.min(1, 1-(pi-0.45)/0.7));
+  const minF   = Math.max(6, Math.round(10/(ppd/25)*(30/dist)));
+  return { dist, ppd, FH, FV, physW, physH, mmpx, angpx, pi, sharp, minF };
 }
 
-function updateHUD(p) {
-  distOut.textContent = p.dist + ' cm';
-  document.getElementById('i-mmpx').textContent    = p.mmPerPx.toFixed(2);
-  document.getElementById('i-angpx').textContent   = p.angPxDeg.toFixed(3) + '°';
-  document.getElementById('i-pi').textContent      = p.pixelationIndex.toFixed(2);
-  document.getElementById('i-fov').textContent     = Math.round(p.physWidthMM / 10) + ' cm';
-  document.getElementById('i-minfont').textContent = p.minFont + 'px';
-
-  if (p.sharpness > 0.7) {
-    statusPill.textContent = 'NITIDEZZA OTTIMA';
-    statusPill.className   = 'pill-ok';
-  } else if (p.sharpness > 0.4) {
-    statusPill.textContent = 'LEGGERO PIXELAMENTO';
-    statusPill.className   = 'pill-warn';
-  } else {
-    statusPill.textContent = 'TROPPO VICINO — PIXEL VISIBILI';
-    statusPill.className   = 'pill-bad';
-  }
+// ── Head offset in pixels ─────────────────────────────
+function headOff(p) {
+  return { dx: -yaw*(W/p.FH), dy: -pitch*(H/p.FV) };
 }
 
-// ── Drawing ───────────────────────────────────────────────────
+// ── Main draw ─────────────────────────────────────────
 function draw() {
-  const p    = getParams();
-  const mode = modeEl.value;
+  rafPending = false;
+  const p    = P();
+  const mode = document.getElementById('mode').value;
+  const ho   = headOff(p);
 
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#050505';
+  ctx.fillRect(0,0,W,H);
+  // scanlines
+  for(let y=0;y<H;y+=4){ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fillRect(0,y,W,2);}
 
-  // Background scanlines for depth
-  ctx.fillStyle = '#050505';
-  ctx.fillRect(0, 0, W, H);
-  for (let y = 0; y < H; y += 4) {
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(0, y, W, 2);
-  }
+  // world-locked content moves with head
+  ctx.save();
+  ctx.translate(ho.dx, ho.dy);
+  if(mode==='grid'||mode==='all')     drawGrid(p);
+  if(mode==='text'||mode==='all')     drawTextTest(p);
+  if(mode==='patterns'||mode==='all') drawPatterns(p);
+  ctx.restore();
 
-  if (mode === 'grid'     || mode === 'all') drawGrid(p);
-  if (mode === 'text'     || mode === 'all') drawTextTest(p);
-  if (mode === 'patterns' || mode === 'all') drawPatterns(p);
-
+  // screen-locked overlays (always fixed)
   drawCrosshair(p);
-  drawSharpnessVignette(p);
-  drawCornerInfo(p);
-
+  drawGazeZone(p);
+  drawVignette(p);
+  drawCornerPanel(p);
   updateHUD(p);
 }
 
-// ── Grid ──────────────────────────────────────────────────────
+function scheduleDraw() {
+  if(!rafPending){ rafPending=true; requestAnimationFrame(draw); }
+}
+
+// ── Line helper ───────────────────────────────────────
+function ln(x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+
+// ── Grid ──────────────────────────────────────────────
 function drawGrid(p) {
-  const gtype = gridEl.value;
-  const COLS = 16, ROWS = 10;
-  const cw = W / COLS, ch = H / ROWS;
+  const gt=document.getElementById('gridtype').value;
+  const C=16,R=10, cw=W/C, ch=H/R;
 
   // sub-grid
-  ctx.strokeStyle = 'rgba(0,80,0,0.25)';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x <= COLS * 4; x++) { ctx.beginPath(); ctx.moveTo(x * W / (COLS*4), 0); ctx.lineTo(x * W / (COLS*4), H); ctx.stroke(); }
-  for (let y = 0; y <= ROWS * 4; y++) { ctx.beginPath(); ctx.moveTo(0, y * H / (ROWS*4)); ctx.lineTo(W, y * H / (ROWS*4)); ctx.stroke(); }
+  ctx.strokeStyle='rgba(0,65,0,0.28)'; ctx.lineWidth=0.5;
+  for(let x=0;x<=C*4;x++) ln(x*W/(C*4),0,x*W/(C*4),H);
+  for(let y=0;y<=R*4;y++) ln(0,y*H/(R*4),W,y*H/(R*4));
 
   // main grid
-  ctx.strokeStyle = 'rgba(0,180,60,0.5)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x * cw, 0); ctx.lineTo(x * cw, H); ctx.stroke(); }
-  for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y * ch); ctx.lineTo(W, y * ch); ctx.stroke(); }
+  ctx.strokeStyle='rgba(0,200,70,0.4)'; ctx.lineWidth=1;
+  for(let x=0;x<=C;x++) ln(x*cw,0,x*cw,H);
+  for(let y=0;y<=R;y++) ln(0,y*ch,W,y*ch);
 
   // labels
-  ctx.fillStyle = '#00cc55';
-  ctx.font = '11px JetBrains Mono, monospace';
-  for (let x = 0; x <= COLS; x++) {
-    for (let y = 0; y <= ROWS; y++) {
-      let lbl = '';
-      if (gtype === 'deg') {
-        const dx = Math.round((x - COLS/2) * (p.FOV_H / COLS));
-        const dy = Math.round((y - ROWS/2) * (p.FOV_V / ROWS));
-        lbl = `${dx}°,${dy}°`;
-      } else if (gtype === 'cm') {
-        const cx2 = ((x - COLS/2) * (p.physWidthMM / COLS) / 10).toFixed(1);
-        const cy2 = ((y - ROWS/2) * (p.physHeightMM / ROWS) / 10).toFixed(1);
-        lbl = `${cx2},${cy2}`;
-      } else {
-        lbl = `${Math.round(x*cw)},${Math.round(y*ch)}`;
-      }
-      if (x < COLS && y < ROWS) {
-        ctx.globalAlpha = 0.6;
-        ctx.fillText(lbl, x * cw + 3, y * ch + 13);
-        ctx.globalAlpha = 1;
-      }
+  ctx.font='10px JetBrains Mono,monospace';
+  for(let xi=0;xi<C;xi++) for(let yi=0;yi<R;yi++){
+    let lbl='';
+    if(gt==='deg'){
+      lbl=`${((xi-C/2+.5)*p.FH/C).toFixed(0)}°,${((yi-R/2+.5)*p.FV/R).toFixed(0)}°`;
+    } else if(gt==='cm'){
+      lbl=`${((xi-C/2+.5)*p.physW/C/10).toFixed(1)},${((yi-R/2+.5)*p.physH/R/10).toFixed(1)}`;
+    } else {
+      lbl=`${Math.round((xi+.5)*cw)},${Math.round((yi+.5)*ch)}`;
     }
+    ctx.fillStyle='rgba(0,180,60,0.45)';
+    ctx.fillText(lbl,xi*cw+3,yi*ch+13);
   }
 
-  // diagonal rulers
-  ctx.strokeStyle = 'rgba(0,255,136,0.15)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 8]);
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(W,H); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(W,0); ctx.lineTo(0,H); ctx.stroke();
+  // diagonals
+  ctx.setLineDash([3,9]); ctx.strokeStyle='rgba(0,255,100,0.08)'; ctx.lineWidth=1;
+  ln(0,0,W,H); ln(W,0,0,H);
   ctx.setLineDash([]);
 
-  // concentric circles
-  const maxR = Math.min(W, H) * 0.48;
-  for (let r = maxR/6; r <= maxR; r += maxR/6) {
-    ctx.beginPath();
-    ctx.arc(W/2, H/2, r, 0, Math.PI*2);
-    const deg = Math.round(r / (W/2) * (p.FOV_H/2));
-    ctx.strokeStyle = `rgba(0,200,80,0.15)`;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(0,200,80,0.5)';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.fillText(`r=${deg}°`, W/2 + r + 4, H/2);
+  // FOV rings
+  const mR=Math.min(W,H)*0.47;
+  for(let s=1;s<=6;s++){
+    const r=mR*s/6;
+    ctx.beginPath(); ctx.arc(W/2,H/2,r,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,200,80,0.1)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='rgba(0,160,60,0.38)'; ctx.font='9px JetBrains Mono,monospace';
+    ctx.fillText(`${Math.round(r/(W/2)*(p.FH/2))}°`, W/2+r+3, H/2-3);
   }
 }
 
-// ── Crosshair ─────────────────────────────────────────────────
+// ── Crosshair — FIXED on screen ───────────────────────
 function drawCrosshair(p) {
-  const cx = W/2, cy = H/2;
-
-  ctx.strokeStyle = '#ff3344';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
-
-  // gaze circle
-  for (let i = 0; i < 3; i++) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, 8 + i*16, 0, Math.PI*2);
-    ctx.strokeStyle = `rgba(255,50,68,${0.6 - i*0.18})`;
-    ctx.lineWidth = i===0 ? 2 : 1;
-    ctx.stroke();
+  const cx=W/2, cy=H/2;
+  ctx.strokeStyle='#ff3344'; ctx.lineWidth=1;
+  ctx.setLineDash([5,5]); ln(cx,0,cx,H); ln(0,cy,W,cy); ctx.setLineDash([]);
+  for(let i=0;i<3;i++){
+    ctx.beginPath(); ctx.arc(cx,cy,8+i*15,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,51,68,${0.7-i*0.2})`; ctx.lineWidth=i?1:2; ctx.stroke();
   }
-
-  ctx.fillStyle = '#ff3344';
-  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
-
-  ctx.fillStyle = '#ff3344';
-  ctx.font = '600 11px Space Grotesk, sans-serif';
-  ctx.fillText('0°, 0° — CENTRO', cx + 14, cy - 10);
+  ctx.fillStyle='#ff3344'; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,50,68,.8)'; ctx.font='500 11px Space Grotesk,sans-serif';
+  const lbl = htEnabled ? `DOVE GUARDO  ${yaw.toFixed(1)}° yaw · ${pitch.toFixed(1)}° pitch` : '0°, 0° — CENTRO FOV';
+  ctx.fillText(lbl, cx+14, cy-12);
 }
 
-// ── Text Tests ────────────────────────────────────────────────
+// ── Optimal gaze zone ellipse ─────────────────────────
+function drawGazeZone(p) {
+  const cx=W/2, cy=H/2;
+  const rx=15*(W/p.FH), ry=12*(H/p.FV);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+  ctx.strokeStyle='rgba(0,255,136,0.18)'; ctx.lineWidth=1.5;
+  ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(0,255,136,0.03)'; ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='rgba(0,255,136,0.28)'; ctx.font='9px JetBrains Mono,monospace';
+  ctx.fillText('ZONA LETTURA OTTIMALE ±15°', cx-rx, cy-ry-5);
+}
+
+// ── Text test ─────────────────────────────────────────
 function drawTextTest(p) {
-  const mode = modeEl.value;
-  const offsetX = mode === 'all' ? 30 : W * 0.08;
-  const offsetY = mode === 'all' ? 80 : H * 0.12;
-
-  const sizes = [6, 8, 10, 12, 14, 18, 24, 32, 48, 64];
-  let y = offsetY;
-
-  // Panel background
-  const panelW = mode === 'all' ? W * 0.38 : W * 0.6;
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(offsetX - 10, offsetY - 20, panelW, H * 0.75);
-
-  ctx.font = '600 11px JetBrains Mono, monospace';
-  ctx.fillStyle = '#555';
-  ctx.fillText('── TEST LEGGIBILITÀ TESTO ──', offsetX, y - 6);
-
-  sizes.forEach(sz => {
-    if (y > H - 40) return;
-    const readable = sz >= p.minFont;
-    const col = readable ? '#00ff88' : '#ff4455';
-    ctx.fillStyle = col;
-    ctx.font = `${sz}px Space Grotesk, sans-serif`;
-
-    const sample = `${sz}px — AaBbCc 0123 Il testo è nitido?`;
-    ctx.fillText(sample.substring(0, Math.floor(panelW / (sz * 0.6))), offsetX, y + sz * 0.8);
-    y += sz + Math.max(6, sz * 0.3);
+  const m=document.getElementById('mode').value;
+  const ox=m==='all'?30:W*0.07, oy=m==='all'?80:H*0.10;
+  const pw=m==='all'?W*0.34:W*0.54;
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(ox-8,oy-22,pw+16,H*0.78);
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1; ctx.strokeRect(ox-8,oy-22,pw+16,H*0.78);
+  ctx.fillStyle='#282828'; ctx.font='10px JetBrains Mono,monospace';
+  ctx.fillText('── TEST LEGGIBILITÀ ──',ox,oy-7);
+  let y=oy+8;
+  [6,8,10,12,14,18,24,32,48].forEach(sz=>{
+    if(y>H-20)return;
+    ctx.fillStyle=sz>=p.minF?'#00ff88':'#ff4455';
+    ctx.font=`${sz}px Space Grotesk,sans-serif`;
+    ctx.fillText(`${sz}px — AaBbCc 0123 Leggibile?`,ox,y+sz*.75);
+    y+=sz+Math.max(5,sz*.25);
   });
-
-  ctx.font = '11px JetBrains Mono, monospace';
-  ctx.fillStyle = '#444';
-  ctx.fillText(`VERDE ≥ ${p.minFont}px leggibile  ·  ROSSO troppo piccolo`, offsetX, Math.min(y + 14, H - 16));
+  ctx.fillStyle='#2a2a2a'; ctx.font='10px JetBrains Mono,monospace';
+  ctx.fillText(`verde ≥${p.minF}px OK  ·  rosso troppo piccolo`,ox,Math.min(y+10,H-10));
 }
 
-// ── Patterns ──────────────────────────────────────────────────
+// ── Patterns ──────────────────────────────────────────
 function drawPatterns(p) {
-  const mode   = modeEl.value;
-  const startX = mode === 'all' ? W * 0.42 : W * 0.06;
-  const startY = mode === 'all' ? H * 0.55 : H * 0.08;
-  const bsz    = mode === 'all' ? 72 : 100;
-  const gap    = mode === 'all' ? 20 : 30;
-  const cols   = mode === 'all' ? 4 : 6;
-
-  const patterns = [
-    { label: 'Bordi netti', fn: (x,y,s) => {
-      for(let i=0;i<10;i++){
-        ctx.fillStyle = i%2===0?'#fff':'#000';
-        ctx.fillRect(x+i*(s/10),y,s/10,s);
-      }
-    }},
-    { label: 'Sfumatura', fn: (x,y,s) => {
-      const g = ctx.createLinearGradient(x,y,x+s,y);
-      g.addColorStop(0,'#000'); g.addColorStop(0.5,'#888'); g.addColorStop(1,'#fff');
-      ctx.fillStyle=g; ctx.fillRect(x,y,s,s);
-    }},
-    { label: 'Checker', fn: (x,y,s) => {
-      const n=8;
-      for(let r=0;r<n;r++) for(let c=0;c<n;c++){
-        ctx.fillStyle=(r+c)%2===0?'#fff':'#111';
-        ctx.fillRect(x+c*(s/n),y+r*(s/n),s/n,s/n);
-      }
-    }},
-    { label: 'Cerchi', fn: (x,y,s) => {
-      ctx.fillStyle='#000'; ctx.fillRect(x,y,s,s);
-      for(let r=s*0.48;r>2;r-=s/12){
-        ctx.beginPath(); ctx.arc(x+s/2,y+s/2,r,0,Math.PI*2);
-        ctx.strokeStyle=r%(s/6)<s/12?'#fff':'#333'; ctx.lineWidth=1; ctx.stroke();
-      }
-    }},
-    { label: 'Testo micro', fn: (x,y,s) => {
-      ctx.fillStyle='#000'; ctx.fillRect(x,y,s,s);
-      [6,8,10,12,14].forEach((fs,i)=>{
-        ctx.fillStyle= fs>=p.minFont?'#0f0':'#f44';
-        ctx.font=`${fs}px monospace`;
-        ctx.fillText('Aa Bb 01',x+3,y+10+i*18);
-      });
-    }},
-    { label: 'Colori RGB', fn: (x,y,s) => {
-      const cols2=['#ff2020','#20ff60','#2060ff','#ffee00','#ff20cc','#20eeff'];
-      cols2.forEach((cl,i)=>{
-        ctx.fillStyle=cl;
-        ctx.fillRect(x+(i%3)*(s/3),y+Math.floor(i/3)*(s/2),s/3,s/2);
-      });
-    }},
-    { label: 'Griglia fine', fn: (x,y,s) => {
-      ctx.fillStyle='#000'; ctx.fillRect(x,y,s,s);
-      for(let i=0;i<s;i+=3){
-        ctx.fillStyle='#fff'; ctx.fillRect(x+i,y,1,s);
-        ctx.fillRect(x,y+i,s,1);
-      }
-    }},
-    { label: 'Rumore', fn: (x,y,s) => {
-      const id = ctx.createImageData(s,s);
-      for(let i=0;i<id.data.length;i+=4){
-        const v=Math.random()*255|0;
-        id.data[i]=v; id.data[i+1]=v; id.data[i+2]=v; id.data[i+3]=255;
-      }
-      ctx.putImageData(id,x,y);
-    }},
+  const m=document.getElementById('mode').value;
+  const ox=m==='all'?W*0.40:W*0.06, oy=m==='all'?H*0.50:H*0.08;
+  const bsz=m==='all'?68:Math.min(96,W/9), gap=m==='all'?16:24, nc=m==='all'?4:5;
+  const pats=[
+    {l:'Bordi netti',f:(x,y,s)=>{for(let i=0;i<10;i++){ctx.fillStyle=i%2?'#000':'#fff';ctx.fillRect(x+i*s/10,y,s/10,s);}}},
+    {l:'Sfumatura',f:(x,y,s)=>{const g=ctx.createLinearGradient(x,y,x+s,y);g.addColorStop(0,'#000');g.addColorStop(.5,'#666');g.addColorStop(1,'#fff');ctx.fillStyle=g;ctx.fillRect(x,y,s,s);}},
+    {l:'Checker',f:(x,y,s)=>{const n=8;for(let r=0;r<n;r++)for(let c=0;c<n;c++){ctx.fillStyle=(r+c)%2?'#111':'#fff';ctx.fillRect(x+c*s/n,y+r*s/n,s/n,s/n);}}},
+    {l:'Cerchi',f:(x,y,s)=>{ctx.fillStyle='#000';ctx.fillRect(x,y,s,s);for(let r=s*.47;r>1;r-=s/11){ctx.beginPath();ctx.arc(x+s/2,y+s/2,r,0,Math.PI*2);ctx.strokeStyle=r%(s/5.5)<s/11?'#fff':'#222';ctx.lineWidth=1;ctx.stroke();}}},
+    {l:'Testo micro',f:(x,y,s)=>{ctx.fillStyle='#000';ctx.fillRect(x,y,s,s);[6,8,10,12,14].forEach((fs,i)=>{ctx.fillStyle=fs>=p.minF?'#0f6':'#f44';ctx.font=`${fs}px monospace`;ctx.fillText('Aa Bb',x+3,y+9+i*17);});}},
+    {l:'Colori RGB',f:(x,y,s)=>{['#ff2020','#20ff60','#2060ff','#ffee00','#ff20cc','#20eeff'].forEach((cl,i)=>{ctx.fillStyle=cl;ctx.fillRect(x+(i%3)*(s/3),y+~~(i/3)*(s/2),s/3,s/2);});}},
+    {l:'Griglia 3px',f:(x,y,s)=>{ctx.fillStyle='#000';ctx.fillRect(x,y,s,s);for(let i=0;i<s;i+=3){ctx.fillStyle='#fff';ctx.fillRect(x+i,y,1,s);ctx.fillRect(x,y+i,s,1);}}},
+    {l:'Rumore',f:(x,y,s)=>{const id=ctx.createImageData(s,s);for(let i=0;i<id.data.length;i+=4){const v=Math.random()*255|0;id.data[i]=v;id.data[i+1]=v;id.data[i+2]=v;id.data[i+3]=255;}ctx.putImageData(id,x,y);}},
+    {l:'Radiale',f:(x,y,s)=>{const g=ctx.createRadialGradient(x+s/2,y+s/2,0,x+s/2,y+s/2,s/2);g.addColorStop(0,'#fff');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(x,y,s,s);}},
+    {l:'Diagonali',f:(x,y,s)=>{ctx.fillStyle='#000';ctx.fillRect(x,y,s,s);ctx.strokeStyle='#fff';ctx.lineWidth=1;for(let i=0;i<s*2;i+=6){ln(x+i,y,x,y+i);ln(x+s-i,y,x+s,y+i);}}},
   ];
-
-  const label_y_off = bsz + 16;
-  patterns.forEach((p2,i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const px  = startX + col * (bsz + gap);
-    const py  = startY + row * (bsz + gap + 18);
-    if (py + bsz + 30 > H) return;
-
-    // frame
-    ctx.fillStyle = '#0d0d0d';
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1;
-    ctx.fillRect(px-2, py-2, bsz+4, bsz+4);
-    ctx.strokeRect(px-2, py-2, bsz+4, bsz+4);
-
-    p2.fn(px, py, bsz);
-
-    ctx.fillStyle = '#777';
-    ctx.font = '11px Space Grotesk, sans-serif';
-    ctx.fillText(p2.label, px, py + label_y_off);
-  });
-
-  if (mode !== 'all') {
-    ctx.fillStyle = '#333';
-    ctx.font = '11px JetBrains Mono, monospace';
-    ctx.fillText(`── PATTERN VISIVI — dist. ${p.dist}cm ──`, startX, startY - 14);
-  }
-}
-
-// ── Sharpness vignette ────────────────────────────────────────
-function drawSharpnessVignette(p) {
-  if (p.sharpness > 0.75) return;
-  const alpha = (1 - p.sharpness) * 0.35;
-  const col   = p.sharpness > 0.4 ? `rgba(255,140,0,${alpha})` : `rgba(255,40,60,${alpha})`;
-  const grad  = ctx.createRadialGradient(W/2,H/2,H*0.25, W/2,H/2,H*0.7);
-  grad.addColorStop(0, 'transparent');
-  grad.addColorStop(1, col);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
-}
-
-// ── Corner info panel ─────────────────────────────────────────
-function drawCornerInfo(p) {
-  const x = W - 10, y = 10;
-  const lines = [
-    `dist: ${p.dist} cm`,
-    `ppd:  ${p.ppd}`,
-    `idx:  ${p.pixelationIndex.toFixed(2)}`,
-    `shr:  ${Math.round(p.sharpness*100)}%`,
-    `fnt:  ≥${p.minFont}px`,
-  ];
-  const lh = 16, pw = 130, ph = lines.length * lh + 12;
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(x - pw - 2, y, pw, ph);
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x - pw - 2, y, pw, ph);
-  ctx.font = '11px JetBrains Mono, monospace';
-  lines.forEach((l, i) => {
-    ctx.fillStyle = i===0?'#00ff88':'#555';
-    ctx.fillText(l, x - pw + 6, y + 14 + i * lh);
+  pats.forEach((pt,i)=>{
+    const col=i%nc, row=~~(i/nc);
+    const px=ox+col*(bsz+gap), py=oy+row*(bsz+gap+16);
+    if(py+bsz+22>H)return;
+    ctx.fillStyle='#0b0b0b'; ctx.strokeStyle='rgba(255,255,255,0.09)'; ctx.lineWidth=1;
+    ctx.fillRect(px-2,py-2,bsz+4,bsz+4); ctx.strokeRect(px-2,py-2,bsz+4,bsz+4);
+    pt.f(px,py,bsz);
+    ctx.fillStyle='#4a4a4a'; ctx.font='10px Space Grotesk,sans-serif';
+    ctx.fillText(pt.l,px,py+bsz+14);
   });
 }
 
-// ── Mouse coordinate tooltip ──────────────────────────────────
-canvas.addEventListener('mousemove', e => {
-  const p = getParams();
-  const rx = e.clientX / W;
-  const ry = (e.clientY - 56) / H;
-  const degX = ((rx - 0.5) * p.FOV_H).toFixed(1);
-  const degY = ((ry - 0.5) * p.FOV_V).toFixed(1);
-  const cmX  = ((rx - 0.5) * p.physWidthMM  / 10).toFixed(1);
-  const cmY  = ((ry - 0.5) * p.physHeightMM / 10).toFixed(1);
-  tip.style.display = 'block';
-  tip.style.left    = (e.clientX + 14) + 'px';
-  tip.style.top     = (e.clientY + 8)  + 'px';
-  tip.textContent   = `${degX}°, ${degY}° | ${cmX}cm, ${cmY}cm`;
+// ── Vignette ──────────────────────────────────────────
+function drawVignette(p) {
+  if(p.sharp>0.78)return;
+  const a=(1-p.sharp)*0.4;
+  const col=p.sharp>0.4?`rgba(255,140,0,${a})`:`rgba(255,40,60,${a})`;
+  const g=ctx.createRadialGradient(W/2,H/2,H*.2,W/2,H/2,H*.7);
+  g.addColorStop(0,'transparent'); g.addColorStop(1,col);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+
+// ── Corner panel ──────────────────────────────────────
+function drawCornerPanel(p) {
+  const rows=[
+    {k:'dist',  v:`${p.dist}cm`},
+    {k:'ppd',   v:`${p.ppd}`},
+    {k:'index', v:p.pi.toFixed(2)},
+    {k:'sharp', v:`${Math.round(p.sharp*100)}%`},
+    {k:'minpx', v:`≥${p.minF}px`},
+    {k:'yaw',   v:`${yaw.toFixed(1)}°`},
+    {k:'pitch', v:`${pitch.toFixed(1)}°`},
+  ];
+  const lh=15,pw=116,ph=rows.length*lh+12,x=W-pw-6,y=6;
+  ctx.fillStyle='rgba(0,0,0,0.75)'; ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+  ctx.fillRect(x,y,pw,ph); ctx.strokeRect(x,y,pw,ph);
+  ctx.font='10px JetBrains Mono,monospace';
+  rows.forEach((r,i)=>{
+    const vc=r.k==='index'?(p.pi<0.6?'#00ff88':p.pi<1?'#ffaa00':'#ff4455'):
+             (r.k==='yaw'||r.k==='pitch')?(htEnabled?'#00ff88':'#333'):'#999';
+    ctx.fillStyle='#2a2a2a'; ctx.fillText(r.k,x+6,y+14+i*lh);
+    ctx.fillStyle=vc;        ctx.fillText(r.v,x+54,y+14+i*lh);
+  });
+}
+
+// ── HUD update ────────────────────────────────────────
+function updateHUD(p) {
+  document.getElementById('dist-out').textContent  = p.dist+'cm';
+  document.getElementById('i-mmpx').textContent    = p.mmpx.toFixed(2);
+  document.getElementById('i-angpx').textContent   = p.angpx.toFixed(3)+'°';
+  document.getElementById('i-pi').textContent      = p.pi.toFixed(2);
+  document.getElementById('i-fov').textContent     = Math.round(p.physW/10)+'cm';
+  document.getElementById('i-minfont').textContent = p.minF+'px';
+  document.getElementById('i-yaw').textContent     = yaw.toFixed(1)+'°';
+  document.getElementById('i-pitch').textContent   = pitch.toFixed(1)+'°';
+  const pill=document.getElementById('status-pill');
+  if(p.sharp>0.7){pill.textContent='NITIDO';pill.className='pill-ok';}
+  else if(p.sharp>0.4){pill.textContent='PIXEL LEGGERI';pill.className='pill-warn';}
+  else{pill.textContent='TROPPO VICINO';pill.className='pill-bad';}
+}
+
+// ── Fullscreen ────────────────────────────────────────
+btnFS.addEventListener('click', toggleFS);
+document.addEventListener('fullscreenchange', onFSChange);
+document.addEventListener('webkitfullscreenchange', onFSChange);
+
+function toggleFS() {
+  const el=document.documentElement;
+  if(!document.fullscreenElement&&!document.webkitFullscreenElement)
+    (el.requestFullscreen||el.webkitRequestFullscreen).call(el);
+  else
+    (document.exitFullscreen||document.webkitExitFullscreen).call(document);
+}
+
+function onFSChange() {
+  fsActive=!!(document.fullscreenElement||document.webkitFullscreenElement);
+  document.body.classList.toggle('fs-active',fsActive);
+  btnFS.textContent=fsActive?'✕ ESCI FS':'⛶ FULLSCREEN';
+  resize();
+}
+
+// Double-tap to toggle HUD in fullscreen
+document.addEventListener('touchend', e=>{
+  if(!fsActive)return;
+  const now=Date.now();
+  if(now-lastTap<300){ hudVisible=!hudVisible; hud.classList.toggle('hidden',!hudVisible); infoBar.classList.toggle('hidden',!hudVisible); }
+  lastTap=now;
 });
-canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
 
-// ── Event listeners ───────────────────────────────────────────
-distEl.addEventListener('input',  draw);
-ppdEl.addEventListener('change',  draw);
-modeEl.addEventListener('change', draw);
-gridEl.addEventListener('change', draw);
+// ── Head Tracking ─────────────────────────────────────
+btnHT.addEventListener('click', ()=>{ htEnabled?stopHT():requestHT(); });
 
-// ── Init ──────────────────────────────────────────────────────
+function requestHT() {
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission().then(r=>{ if(r==='granted') startHT(); }).catch(console.error);
+  } else { startHT(); }
+}
+
+function startHT() {
+  window.addEventListener('deviceorientation', onOrientation, true);
+  htEnabled=true;
+  btnHT.textContent='HEAD TRACK: ON'; btnHT.classList.add('active');
+  htBadge.textContent='HEAD TRACK: ON'; htBadge.classList.add('active');
+  // Auto-calibrate on first data
+  let first=true;
+  window._htFirst=()=>{ yawOff=rawYaw; pitchOff=rawPitch; first=false; window.removeEventListener('deviceorientation',window._htFirst); };
+  window.addEventListener('deviceorientation',window._htFirst,{once:true});
+}
+
+function stopHT() {
+  window.removeEventListener('deviceorientation',onOrientation,true);
+  htEnabled=false; yaw=0; pitch=0;
+  btnHT.textContent='HEAD TRACK: OFF'; btnHT.classList.remove('active');
+  htBadge.textContent='HEAD TRACK: OFF'; htBadge.classList.remove('active');
+  scheduleDraw();
+}
+
+function onOrientation(e) {
+  // Quest 3 browser exposes standard DeviceOrientationEvent
+  // gamma = left/right tilt (yaw in landscape), beta = forward/back (pitch)
+  rawYaw   = e.gamma||0;
+  rawPitch = (e.beta||0) - 90; // subtract 90 for landscape reference
+  yaw   = Math.max(-50, Math.min(50, rawYaw   - yawOff));
+  pitch = Math.max(-40, Math.min(40, rawPitch - pitchOff));
+  scheduleDraw();
+}
+
+// Reset = current position becomes 0,0
+btnReset.addEventListener('click', ()=>{
+  yawOff=rawYaw; pitchOff=rawPitch; yaw=0; pitch=0; scheduleDraw();
+});
+
+// ── Mouse tooltip ─────────────────────────────────────
+canvas.addEventListener('mousemove', e=>{
+  const p=P();
+  const rx=e.clientX/W, ry=(e.clientY-(fsActive?0:HUD_H))/H;
+  const dx=((rx-.5)*p.FH+yaw).toFixed(1), dy=((ry-.5)*p.FV+pitch).toFixed(1);
+  const cx=((rx-.5)*p.physW/10).toFixed(1), cy2=((ry-.5)*p.physH/10).toFixed(1);
+  tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+8)+'px';
+  tip.textContent=`${dx}°, ${dy}° | ${cx}cm, ${cy2}cm`;
+});
+canvas.addEventListener('mouseleave',()=>{ tip.style.display='none'; });
+
+// ── Controls ──────────────────────────────────────────
+['dist','ppd','mode','gridtype'].forEach(id=>{
+  document.getElementById(id).addEventListener(id==='dist'?'input':'change', scheduleDraw);
+});
+
+// ── Init ──────────────────────────────────────────────
 resize();
 </script>
 </body>
